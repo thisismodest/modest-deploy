@@ -181,6 +181,13 @@ for (const [what, result] of Object.entries(probe)) {
 }
 ok("it can write its own data, and nothing else it tried (but another port: see the threat model's known limits)");
 
+step("each product's build user reaches only its own key and source");
+for (const path of ["/etc/modest-host/keys/blog", "/srv/modest-host/blog/source.git/HEAD", "/etc/modest-host/secrets/blog"]) {
+  assert.match(sh("runuser", ["-u", "mb-shop", "--", "cat", path], { allowFail: true }), /Permission denied/, path);
+}
+assert.match(sh("runuser", ["-u", "mb-shop", "--", "ls", "/etc/modest-host/keys"], { allowFail: true }), /Permission denied/);
+ok("shop's build user can't read blog's key, source, or secret, nor list the keys");
+
 step("a newer version deploys; an old message sent again doesn't roll it back");
 const v2 = commit("shop", "shop v2");
 await webhook("shop", v2);

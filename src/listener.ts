@@ -59,7 +59,9 @@ async function handle(paths: Layout, seen: Set<string>, req: IncomingMessage, re
   if (!product || !signatureValid(body, typeof signature === "string" ? signature : undefined, secret)) {
     return answer(res, 401, "Not signed with this product's secret");
   }
-  // Each delivery is acted on once: one sent again (by anyone who kept a copy) is ignored.
+  // Each delivery is acted on once when GitHub sends it again. (The id isn't signed, so this
+  // isn't a defence: that's that only main's newest commit is ever deployed, and a failed one
+  // isn't tried again.)
   const delivery = req.headers["x-github-delivery"];
   const id = typeof delivery === "string" && /^[A-Za-z0-9-]{1,64}$/.test(delivery) ? `${name}:${delivery}` : null;
   if (id && seen.has(id)) return answer(res, 202, "Ignored: already received");
@@ -69,14 +71,20 @@ async function handle(paths: Layout, seen: Set<string>, req: IncomingMessage, re
   } catch {
     return answer(res, 400, "Not JSON");
   }
-  if (id) {
+  const remember = () => {
+    if (!id) return;
     seen.add(id);
     if (seen.size > REMEMBERED) seen.delete(seen.values().next().value ?? "");
-  }
+  };
   const event = req.headers["x-github-event"];
   const decision = decide(typeof event === "string" ? event : undefined, payload, product);
-  if ("ignore" in decision) return answer(res, 202, `Ignored: ${decision.ignore}`);
+  if ("ignore" in decision) {
+    remember();
+    return answer(res, 202, `Ignored: ${decision.ignore}`);
+  }
+  // Remembered once saved: if saving fails, GitHub's own redelivery still gets through.
   await enqueue(paths, name, decision.deploy);
+  remember();
   console.log(`modest-host: ${name}: asked to deploy ${decision.deploy}`);
   answer(res, 202, `Deploying ${decision.deploy.slice(0, 7)}`);
 }

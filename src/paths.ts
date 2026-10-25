@@ -47,15 +47,19 @@ export function layout(root = "") {
     /** Deploy requests: written by the listener, taken by the deploy service. */
     writing: at("var/spool/modest-host/writing"),
     requests: at("var/spool/modest-host/requests"),
-    /** The build user's home, for git's and npm's own files. */
-    buildHome: at("var/lib/modest-host-build"),
+    /** Each product's build user's home, for git's and npm's own files. */
+    buildHomes: at("var/lib/modest-host-build"),
+    buildHome: (name: string) => at("var/lib/modest-host-build", name),
   };
 }
 
-/** The system users: one for the listener, one for building, and one per product. */
+/**
+ * The system users: one for the listener, and two per product, one it runs as and one
+ * its releases are built as, so a build can only ever reach its own product's key and source.
+ */
 export const LISTENER_USER = "modest-host";
-export const BUILD_USER = "modest-host-build";
 export const productUser = (name: string) => `mh-${name}`;
+export const buildUser = (name: string) => `mb-${name}`;
 export const productUnit = (name: string) => `modest-host-${name}.service`;
 /** Where the listener listens, behind Caddy. */
 export const LISTENER_PORT = 9327;

@@ -240,3 +240,18 @@ test("SSH on its own port isn't counted as open, but anything else listening ove
   assert.equal(listening?.ok, false);
   assert.equal(listening?.fix, "stop, or listen only on 127.0.0.1: 0.0.0.0:5353 (UDP)");
 });
+
+test("a Match block that allows passwords for one user, or from a private address, is found", async () => {
+  const safe = "passwordauthentication no\nkbdinteractiveauthentication no\npermitrootlogin no\n";
+  const run: Run = async (program, args) => {
+    if (program === "getent") return ok("root:x:0:0::/root:/bin/bash\nann:x:1000:1000::/home/ann:/bin/bash\nsvc:x:1001:1001::/:/usr/sbin/nologin\n");
+    if (program === "sshd")
+      return ok(
+        args.join(" ").includes("user=ann,host=outside.example,addr=10.0.0.1") ? safe.replace("passwordauthentication no", "passwordauthentication yes") : safe,
+      );
+    return ok();
+  };
+  const finding = (await checkServer(run, async () => "")).find((f) => f.what === "SSH: no sign-in by password");
+  assert.equal(finding?.ok, false);
+  assert.match(finding?.fix ?? "", /allowed for ann/);
+});

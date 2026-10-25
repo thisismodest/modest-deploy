@@ -9,7 +9,7 @@ import { join, relative } from "node:path";
 import { checkServer, report } from "./check.ts";
 import { answersWithin, running } from "./deploy.ts";
 import { isDomain, isName, isRepo } from "./names.ts";
-import { BUILD_USER, type Layout, LISTENER_USER, productUnit, productUser } from "./paths.ts";
+import { buildUser, type Layout, LISTENER_USER, productUnit, productUser } from "./paths.ts";
 import { freePort, listProducts, type Product, readHost, readProduct, saveProduct, writeWhole } from "./products.ts";
 import { must, type Run } from "./run.ts";
 import { BACKUP_TIMER, backupService, caddyImport, deployPath, deployService, hostSite, listenerService, productService, productSite } from "./units.ts";
@@ -44,13 +44,21 @@ async function caddyWith(server: Server, file: string, text: string | null): Pro
   const before = await readFile(file, "utf8").catch(() => null);
   if (text === null) await rm(file, { force: true });
   else await writeWhole(file, text);
-  const valid = await server.run("caddy", ["validate", "--config", server.paths.caddyfile, "--adapter", "caddyfile"]);
-  if (valid.code !== 0) {
+  const undo = async () => {
     if (before === null) await rm(file, { force: true });
     else await writeWhole(file, before);
+  };
+  const valid = await server.run("caddy", ["validate", "--config", server.paths.caddyfile, "--adapter", "caddyfile"]);
+  if (valid.code !== 0) {
+    await undo();
     throw new Error(`Caddy can't use it, so nothing changed: ${valid.stderr.trim().split("\n").slice(-2).join(" ")}`);
   }
-  await must(server.run, "systemctl", ["reload", "caddy"]);
+  const reloaded = await server.run("systemctl", ["reload", "caddy"]);
+  if (reloaded.code !== 0) {
+    await undo();
+    await server.run("systemctl", ["reload", "caddy"]);
+    throw new Error(`Caddy couldn't reload with it, so nothing changed: ${reloaded.stderr.trim()}`);
+  }
 }
 
 /** GitHub's SSH host keys, as GitHub publishes them over HTTPS: fetched, never trusted on first use. */
@@ -102,25 +110,25 @@ export async function install(server: Server, given: string | undefined, anyway 
   if (!isDomain(domain)) throw new Error("the deploy domain must be a domain, such as deploy.example.org: add --domain");
   await checked(server, anyway);
   await systemUser(server, LISTENER_USER);
-  await systemUser(server, BUILD_USER, paths.buildHome);
 
   await folder(server, "/etc/modest-host", 0o755);
   await folder(server, paths.products, 0o755);
   await folder(server, paths.secrets, 0o750, LISTENER_USER);
   await chown(paths.secrets, 0, Number((await must(run, "id", ["-g", LISTENER_USER])).trim()));
-  await folder(server, paths.keys, 0o700, BUILD_USER);
+  // Passed through, never listed: each key inside is its own build user's alone.
+  await folder(server, paths.keys, 0o711);
   await folder(server, paths.envs, 0o700);
   await folder(server, paths.caddy, 0o755);
   await folder(server, "/srv/modest-host", 0o755);
   await folder(server, "/var/lib/modest-host", 0o755);
   await folder(server, "/var/backups/modest-host", 0o700);
-  await folder(server, paths.buildHome, 0o700, BUILD_USER);
+  await folder(server, paths.buildHomes, 0o711);
   await folder(server, "/var/spool/modest-host", 0o700, LISTENER_USER);
   await folder(server, paths.writing, 0o700, LISTENER_USER);
   await folder(server, paths.requests, 0o700, LISTENER_USER);
 
   await writeWhole(paths.knownHosts, await githubHostKeys());
-  await chown(paths.knownHosts, await uid(server, BUILD_USER), 0);
+  await chmod(paths.knownHosts, 0o644);
 
   // Caddy first: if it can't use the change, its own Caddyfile is put back as it was, and nothing else has changed.
   const caddyfile = await readFile(paths.caddyfile, "utf8").catch(() => "");
@@ -130,7 +138,8 @@ export async function install(server: Server, given: string | undefined, anyway 
   try {
     await caddyWith(server, paths.caddySite("_host"), hostSite(domain));
   } catch (error) {
-    await writeWhole(paths.caddyfile, caddyfile);
+    if (caddyfile) await writeWhole(paths.caddyfile, caddyfile);
+    else await rm(paths.caddyfile, { force: true });
     throw new Error(`${error instanceof Error ? error.message : String(error)} (if your Caddyfile is one site without braces, put braces round it)`);
   }
   await writeWhole(paths.host, `${JSON.stringify({ domain }, null, 2)}\n`);
@@ -140,17 +149,26 @@ export async function install(server: Server, given: string | undefined, anyway 
   await writeWhole(paths.unit("modest-host-deploy.path"), deployPath(paths));
   await writeWhole(paths.unit("modest-host-backup.service"), backupService(node, cli));
   await writeWhole(paths.unit("modest-host-backup.timer"), BACKUP_TIMER);
+  // Products' units are rewritten only if they've changed, and only those products restarted.
   const products = await listProducts(paths);
-  for (const product of products) await writeWhole(paths.unit(productUnit(product.name)), productService(paths, product, node));
+  const changed: Product[] = [];
+  for (const product of products) {
+    const text = productService(paths, product, node);
+    if ((await readFile(paths.unit(productUnit(product.name)), "utf8").catch(() => "")) === text) continue;
+    await writeWhole(paths.unit(productUnit(product.name)), text);
+    changed.push(product);
+  }
   await must(run, "systemctl", ["daemon-reload"]);
   await must(run, "systemctl", ["enable", "--now", "modest-host-listener.service", "modest-host-deploy.path", "modest-host-backup.timer"]);
   await must(run, "systemctl", ["restart", "modest-host-listener.service"]);
-  for (const product of products) {
+  for (const product of changed) {
     if ((await run("systemctl", ["is-active", "--quiet", productUnit(product.name)])).code !== 0) continue;
     await run("systemctl", ["restart", productUnit(product.name)]);
     const answering = await answersWithin(product.port);
     server.log(
-      answering ? `${product.name}: restarted, and answering.` : `${product.name}: restarted, but not answering: see modest-host logs ${product.name}`,
+      answering
+        ? `${product.name}: restarted with its updated unit, and answering.`
+        : `${product.name}: restarted with its updated unit, but NOT answering: see modest-host logs ${product.name}`,
     );
   }
   server.log(`Installed. Point ${domain}'s DNS at this server: GitHub's messages arrive there.`);
@@ -189,8 +207,10 @@ export async function add(server: Server, name: string, domain: string, repo: st
   };
 
   await caddyWith(server, paths.caddySite(name), productSite(product));
-  const user = productUser(name);
-  await systemUser(server, user);
+  await systemUser(server, productUser(name));
+  const builder = buildUser(name);
+  await systemUser(server, builder, paths.buildHome(name));
+  await folder(server, paths.buildHome(name), 0o700, builder);
 
   let secret = existing ? (await readFile(paths.secret(name), "utf8").catch(() => "")).trim() : "";
   if (!/^[0-9a-f]{64}$/.test(secret)) {
@@ -202,7 +222,10 @@ export async function add(server: Server, name: string, domain: string, repo: st
   if (!deployKey) {
     await rm(paths.key(name), { force: true });
     await rm(`${paths.key(name)}.pub`, { force: true });
-    await must(run, "ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-C", `modest-host ${name}`, "-f", paths.key(name)], { as: BUILD_USER });
+    await must(run, "ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-C", `modest-host ${name}`, "-f", paths.key(name)]);
+    // Made by root in a folder only root can write, then given to this product's build user alone.
+    await chown(paths.key(name), await uid(server, builder), 0);
+    await chmod(paths.key(name), 0o600);
     deployKey = (await readFile(`${paths.key(name)}.pub`, "utf8")).trim();
   }
   if ((await readFile(paths.env(name), "utf8").catch(() => null)) === null) {
@@ -211,8 +234,8 @@ export async function add(server: Server, name: string, domain: string, repo: st
 
   await folder(server, paths.code(name), 0o755);
   await folder(server, paths.releases(name), 0o755);
-  await folder(server, paths.source(name), 0o700, BUILD_USER);
-  await must(run, "git", ["init", "--quiet", "--bare", paths.source(name)], { as: BUILD_USER });
+  await folder(server, paths.source(name), 0o700, builder);
+  await must(run, "git", ["init", "--quiet", "--bare", paths.source(name)], { as: builder });
 
   await writeWhole(paths.unit(productUnit(name)), productService(paths, product, node));
   await must(run, "systemctl", ["daemon-reload"]);
@@ -225,10 +248,18 @@ export async function add(server: Server, name: string, domain: string, repo: st
 export async function remove(server: Server, name: string): Promise<string[]> {
   const { paths, run } = server;
   if (!isName(name)) throw new Error(`there's no product called ${name}`);
-  const there = await readFile(paths.product(name), "utf8").then(
-    () => true,
-    () => false,
-  );
+  // Anything left of it counts, even from an add that stopped part way.
+  const parts = [paths.product(name), paths.unit(productUnit(name)), paths.caddySite(name), paths.secret(name), paths.code(name)];
+  const there = (
+    await Promise.all(
+      parts.map((path) =>
+        stat(path).then(
+          () => true,
+          () => false,
+        ),
+      ),
+    )
+  ).some(Boolean);
   if (!there) throw new Error(`there's no product called ${name}`);
   await run("systemctl", ["disable", "--now", productUnit(name)]);
   await rm(paths.unit(productUnit(name)), { force: true });
@@ -272,43 +303,49 @@ export async function backup(server: Server, today = new Date().toISOString().sl
     console.error(`modest-host: ${product}: ${db} wasn't copied: ${why}`);
   };
   for (const product of await listProducts(paths)) {
-    const user = productUser(product.name);
-    // Each product's user can reach only its own folder here (the parent can be passed through, not listed).
-    await folder(server, paths.copying, 0o711);
-    const work = paths.copyingFor(product.name);
-    await rm(work, { recursive: true, force: true });
-    await folder(server, work, 0o700, user);
-    const night = join(paths.backups(product.name), today);
-    for (const db of await databases(paths.data(product.name))) {
-      const named = relative(paths.data(product.name), db);
-      const size = (await stat(db)).size;
-      await mkdir(paths.backups(product.name), { recursive: true, mode: 0o700 });
-      const free = await statfs(paths.backups(product.name));
-      if (free.bavail * free.bsize < size * 2 + 1024 ** 3) {
-        failure(product.name, named, "too little room on the disk (it keeps 1GB free)");
-        continue;
+    // One product's trouble (its user missing, a file gone part way) never stops the others' copies.
+    try {
+      const user = productUser(product.name);
+      // Each product's user can reach only its own folder here (the parent can be passed through, not listed).
+      await folder(server, paths.copying, 0o711);
+      const work = paths.copyingFor(product.name);
+      await rm(work, { recursive: true, force: true });
+      await folder(server, work, 0o700, user);
+      const night = join(paths.backups(product.name), today);
+      for (const db of await databases(paths.data(product.name))) {
+        const named = relative(paths.data(product.name), db);
+        const size = (await stat(db)).size;
+        await mkdir(paths.backups(product.name), { recursive: true, mode: 0o700 });
+        const free = await statfs(paths.backups(product.name));
+        if (free.bavail * free.bsize < size * 2 + 1024 ** 3) {
+          failure(product.name, named, "too little room on the disk (it keeps 1GB free)");
+          continue;
+        }
+        const copy = join(work, "copy.db");
+        const made = await run(node, [cli, "copy-database", db, copy], { as: user });
+        if (made.code !== 0) {
+          failure(product.name, named, made.stderr.trim().split("\n").at(-1) ?? "");
+          continue;
+        }
+        const to = join(night, named);
+        await mkdir(join(to, ".."), { recursive: true, mode: 0o700 });
+        try {
+          // Under another name until it's whole, so a copy cut short is never taken for one.
+          await takeCopy(copy, `${to}.partial`, await uid(server, user));
+          await rename(`${to}.partial`, to);
+          copied++;
+        } catch (error) {
+          await rm(`${to}.partial`, { force: true });
+          failure(product.name, named, error instanceof Error ? error.message : String(error));
+        }
       }
-      const copy = join(work, "copy.db");
-      const made = await run(node, [cli, "copy-database", db, copy], { as: user });
-      if (made.code !== 0) {
-        failure(product.name, named, made.stderr.trim().split("\n").at(-1) ?? "");
-        continue;
-      }
-      const to = join(night, named);
-      await mkdir(join(to, ".."), { recursive: true, mode: 0o700 });
-      try {
-        // Under another name until it's whole, so a copy cut short is never taken for one.
-        await takeCopy(copy, `${to}.partial`, await uid(server, user));
-        await rename(`${to}.partial`, to);
-        copied++;
-      } catch (error) {
-        await rm(`${to}.partial`, { force: true });
-        failure(product.name, named, error instanceof Error ? error.message : String(error));
-      }
+      await rm(work, { recursive: true, force: true });
+      const nights = (await readdir(paths.backups(product.name)).catch(() => [] as string[])).filter((n) => /^\d{4}-\d{2}-\d{2}$/.test(n)).sort();
+      for (const old of nights.slice(0, Math.max(0, nights.length - NIGHTS)))
+        await rm(join(paths.backups(product.name), old), { recursive: true, force: true });
+    } catch (error) {
+      failure(product.name, "its databases", error instanceof Error ? error.message : String(error));
     }
-    await rm(work, { recursive: true, force: true });
-    const nights = (await readdir(paths.backups(product.name)).catch(() => [] as string[])).filter((n) => /^\d{4}-\d{2}-\d{2}$/.test(n)).sort();
-    for (const old of nights.slice(0, Math.max(0, nights.length - NIGHTS))) await rm(join(paths.backups(product.name), old), { recursive: true, force: true });
   }
   return { copied, failed };
 }

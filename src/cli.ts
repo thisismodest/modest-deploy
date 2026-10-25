@@ -4,7 +4,7 @@
 // runs: listen (the listener), work (the deploy service), and copy-database (backup).
 
 import { realpathSync } from "node:fs";
-import { checkServer, report } from "./check.ts";
+import { checkServer, outsidePorts, report } from "./check.ts";
 import { answersWithin, deploy } from "./deploy.ts";
 import { launch } from "./launch.ts";
 import { createListener } from "./listener.ts";
@@ -165,6 +165,10 @@ async function main(argv: string[]): Promise<void> {
       return;
     }
     case "backup-now": {
+      // Nightly, too: anything listening to the outside that shouldn't be (a product broken into, say) is said.
+      const listening = await run("ss", ["-Hltn"]);
+      const open = outsidePorts(listening.stdout).filter((local) => !/:(\d+)$/.test(local) || Number(local.split(":").at(-1)) >= 1024);
+      if (open.length) console.warn(`modest-host: listening to the outside, and shouldn't be: ${open.join(", ")}. Run modest-host check.`);
       const { copied, failed } = await backup(server());
       log(`modest-host: copied ${copied} databases${failed ? `; ${failed} couldn't be copied (above)` : ""}.`);
       if (failed) process.exitCode = 1;

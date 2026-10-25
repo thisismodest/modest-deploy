@@ -153,3 +153,16 @@ test("a newer request for a product replaces one still waiting; anything in the 
     await assert.rejects(enqueue(paths, "shop", "HEAD"));
     assert.equal(PRODUCT.name, "shop");
   }));
+
+test("a pipe or a link left in the deploy queue is thrown away, never read: it can't stall deploys or point root elsewhere", () =>
+  onServer(async (paths) => {
+    await withProduct(paths);
+    await enqueue(paths, "shop", COMMIT);
+    const { execFileSync } = await import("node:child_process");
+    const { symlink } = await import("node:fs/promises");
+    execFileSync("mkfifo", [join(paths.requests, "piped")]);
+    await symlink("/dev/zero", join(paths.requests, "linked"));
+    const taken = await Promise.race([takeAll(paths), new Promise((_, stop) => setTimeout(() => stop(new Error("stalled")), 5000))]);
+    assert.deepEqual(taken, [{ name: "shop", commit: COMMIT }]);
+    assert.deepEqual(await waiting(paths), []);
+  }));

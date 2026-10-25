@@ -29,7 +29,7 @@ marked as built (with its test) or planned.
 | An old message sent again, to roll a product back | The commit must still be the tip of `main` when it's fetched | Built (`deploy.ts`) |
 | A huge or slow request to the listener | Bodies over 1MB are refused, and slow requests are cut off | Built (`listener.ts`) |
 | Finding which products a server has | A product that doesn't exist gets the same answer as a wrong signature | Built (`listener.ts`) |
-| A captured delivery sent again | Each delivery is acted on once (its id remembered); and only main's newest commit is ever deployed | Built (`listener.ts`, `deploy.ts`) |
+| A captured delivery sent again | Only main's newest commit is ever deployed, and a commit that failed isn't tried again by a message, only by hand (GitHub's delivery id isn't signed, so remembering it is only a convenience) | Built (`deploy.ts`) |
 | A message that names something to run | The listener runs nothing it's sent: it checks the message, then asks for a deploy of a product it already knows, by name, with a commit checked to be 40 hex characters | Built (`listener.ts`) |
 | The listener being broken into | It runs as its own user, sandboxed by systemd, able to write only into the deploy requests folder, and to reach only this machine; the deploy is started by systemd when a request appears, and takes only a known product's name and a checked commit from it | Built (`units.ts`, `queue.ts`), tested end to end |
 | GitHub, the repository, or a workflow being broken into | GitHub holds no key to the server, only the webhook secret, which no workflow can read; at worst, it could deploy a commit already on `main` | By design |
@@ -37,7 +37,9 @@ marked as built (with its test) or planned.
 | A package's install script running code on the server | Dependencies are installed with install scripts off, exactly as the lockfile says | Built (`deploy.ts`) |
 | A repository's own settings choosing what npm or git runs (an `.npmrc` naming another program as git) | The repository's `.npmrc` is removed before `npm ci`, and npm's and git's settings are pinned in the environment, which overrides any file | Built (`deploy.ts`) |
 | A bad deploy taking a product down | It's checked once started, and the previous version comes back if it doesn't answer, or if anything fails after the switch | Built (`deploy.ts`), tested end to end |
-| A product reachable without Caddy | A version that listens on anything but 127.0.0.1 is switched back | Built (`deploy.ts`) |
+| A product reachable without Caddy | By mistake: a version listening on its port beyond 127.0.0.1 is switched back. On purpose (a product broken into): the firewall set up before install blocks it, and `check` and the nightly run say so | Built (`deploy.ts`, `check.ts`, `cli.ts`) |
+| A build reaching another product's key or source | Each product has its own build user, which alone can read its deploy key and its copy of the repository | Built (`server.ts`, `deploy.ts`), tested end to end |
+| Something left in the deploy queue stalling deploys (a pipe, a link) | Requests are read only if they're small plain files; anything else is thrown away | Built (`queue.ts`) |
 | A pushed commit filling the shared disk | A release over 1GB or 200,000 files is refused, sizes are counted before anything is written, and 1GB is always kept free | Built (`deploy.ts`) |
 | A release tricking root into reading something else | Root reads a release's `package.json` only if it's a small, plain file (never a link or a device); the deploy service is limited to 1GB of memory, with no devices | Built (`deploy.ts`, `units.ts`) |
 | The server's answer to `launch` sending GitHub's webhook or a key elsewhere | Only a webhook at `/deploy/<this product>` over HTTPS on a domain, and one plain ed25519 key, are accepted | Built (`launch.ts`) |
@@ -57,6 +59,9 @@ marked as built (with its test) or planned.
   package still runs when the product does, inside that product's sandbox.
 - **Anyone with a product's webhook secret** can ask for that product to be deployed
   again, at its current commit on `main`. Nothing more.
+- **A product that's been broken into could listen on another port to the outside.**
+  Ubuntu's systemd can't stop it (see below); the firewall from "Before you install"
+  does, and `check` and the nightly run report it.
 - **A product that's been broken into could listen on another product's port** while
   that one is restarting, and so answer its visitors. systemd can stop this
   (`SocketBindDeny`, which modest-host sets), but Ubuntu's systemd is built without
@@ -65,9 +70,6 @@ marked as built (with its test) or planned.
 - **The deploy service runs as root,** because it makes each release owned by root
   and restarts products. It runs git and npm as the build user, with install scripts
   off, and takes nothing from a request but a checked name and commit.
-- **One build user holds every product's deploy key.** Nothing a release contains runs
-  as it (no install scripts, and git and tar don't run what they unpack), but if
-  something ever did, it could read every product's source.
 - **A fetch isn't limited in size.** Someone who can push to a product's `main` could
   push a repository large enough to fill the disk as it's fetched, before its size
   can be checked. Deploys stop once less than 1GB is free.

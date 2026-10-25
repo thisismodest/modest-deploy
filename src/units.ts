@@ -2,7 +2,7 @@
 // already been checked (names.ts), so none can add a line or a directive of its own.
 
 import { isDomain, isName, isPort } from "./names.ts";
-import { BUILD_USER, type Layout, LISTENER_PORT, LISTENER_USER, productUser } from "./paths.ts";
+import { type Layout, LISTENER_PORT, LISTENER_USER, productUser } from "./paths.ts";
 import type { Product } from "./products.ts";
 
 /** What systemd takes away from every service modest-host runs: whatever a Node server doesn't need. */
@@ -204,6 +204,3 @@ ${domain} {
 
 /** The line added to Caddy's own Caddyfile, so it reads modest-host's sites. */
 export const caddyImport = (paths: Layout) => `import ${paths.caddy}/*.caddy`;
-
-/** The users modest-host makes, with no shell and no way to sign in. */
-export const SYSTEM_USERS = [LISTENER_USER, BUILD_USER] as const;

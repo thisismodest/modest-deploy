@@ -66,7 +66,9 @@ export async function launch(run: Run, options: Launch, log: (line: string) => v
     hook.port !== "" ||
     hook.pathname !== `/deploy/${name}` ||
     hook.search !== "" ||
-    hook.username !== ""
+    hook.username !== "" ||
+    hook.password !== "" ||
+    hook.hash !== ""
   ) {
     throw new Error("the server's answer wasn't what modest-host add gives");
   }

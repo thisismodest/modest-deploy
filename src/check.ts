@@ -32,10 +32,6 @@ export function outsidePorts(ss: string, open: Set<number> = OPEN): string[] {
 /** sshd's settings as it will use them (`sshd -T`), by lower-case name. */
 const sshdSettings = (text: string) => new Map(text.split("\n").map((line) => [line.split(" ")[0] ?? "", line.slice(line.indexOf(" ") + 1).trim()]));
 
-/** As sshd will treat a connection from outside: for root, and for anyone else (so Match blocks count). */
-const AS_ROOT = ["-T", "-C", "user=root,host=outside.example,addr=192.0.2.1"];
-const AS_ANYONE = ["-T", "-C", "user=nobody,host=outside.example,addr=192.0.2.1"];
-
 export async function checkServer(run: Run, read = (path: string) => readFile(path, "utf8"), cli?: string): Promise<Finding[]> {
   const findings: Finding[] = [];
   const add = (ok: boolean, what: string, fix: string) => findings.push({ ok, what, fix });
@@ -61,26 +57,50 @@ export async function checkServer(run: Run, read = (path: string) => readFile(pa
     );
   }
 
-  const anyone = await run("sshd", AS_ANYONE);
-  const root = await run("sshd", AS_ROOT);
+  // As sshd treats a connection from a public and a private address, for root and for
+  // everyone who can sign in, so a Match block that allows more for some is found.
+  const people = (await run("getent", ["passwd"])).stdout
+    .split("\n")
+    .map((line) => line.split(":"))
+    .filter((f) => Number(f[2]) >= 1000 && !/nologin|false$/.test(f[6] ?? "") && /^[a-z_][a-z0-9_-]*$/.test(f[0] ?? ""))
+    .map((f) => f[0] ?? "")
+    .slice(0, 50);
+  const as = (user: string, addr: string) => run("sshd", ["-T", "-C", `user=${user},host=outside.example,addr=${addr}`]);
+  const views: { user: string; text: string }[] = [];
+  let readable = true;
+  for (const user of ["root", "nobody", ...people]) {
+    for (const addr of ["192.0.2.1", "10.0.0.1"]) {
+      const seen = await as(user, addr);
+      if (seen.code !== 0) readable = false;
+      views.push({ user, text: seen.stdout });
+    }
+  }
   let sshPorts = [22];
-  if (anyone.code !== 0 || root.code !== 0) {
+  if (!readable) {
     add(false, "SSH's settings readable", "run it with sudo, on a server with OpenSSH's server (sshd -T has to work)");
   } else {
-    const settings = sshdSettings(anyone.stdout);
-    sshPorts = [...anyone.stdout.matchAll(/^port (\d+)$/gm)].map((m) => Number(m[1]));
+    sshPorts = [...(views[0]?.text ?? "").matchAll(/^port (\d+)$/gm)].map((m) => Number(m[1]));
+    const allow = (key: string, bad: (value: string | undefined) => boolean, users = views) =>
+      users.filter((v) => bad(sshdSettings(v.text).get(key))).map((v) => v.user);
+    const passwords = [...new Set(allow("passwordauthentication", (v) => v !== "no"))];
     add(
-      settings.get("passwordauthentication") === "no",
+      passwords.length === 0,
       "SSH: no sign-in by password",
-      "set PasswordAuthentication no in /etc/ssh/sshd_config.d/ (and in any Match block), then systemctl reload ssh",
+      `set PasswordAuthentication no in /etc/ssh/sshd_config.d/ (and in any Match block; it's allowed for ${passwords.join(", ")}), then systemctl reload ssh`,
     );
+    const typed = [...new Set(allow("kbdinteractiveauthentication", (v) => v === "yes"))];
     add(
-      settings.get("kbdinteractiveauthentication") !== "yes",
+      typed.length === 0,
       "SSH: no sign-in by typed answers",
-      "set KbdInteractiveAuthentication no in /etc/ssh/sshd_config.d/, then systemctl reload ssh",
+      "set KbdInteractiveAuthentication no in /etc/ssh/sshd_config.d/ (and in any Match block), then systemctl reload ssh",
+    );
+    const root = allow(
+      "permitrootlogin",
+      (v) => v !== "no",
+      views.filter((v) => v.user === "root"),
     );
     add(
-      sshdSettings(root.stdout).get("permitrootlogin") === "no",
+      root.length === 0,
       "SSH: no sign-in as root",
       "sign in as your own user with sudo, then set PermitRootLogin no in /etc/ssh/sshd_config.d/ and systemctl reload ssh",
     );

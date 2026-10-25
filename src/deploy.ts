@@ -4,11 +4,11 @@
 // Run by the deploy service, as root, with git and npm run as the build user.
 
 import { constants } from "node:fs";
-import { lstat, mkdir, open, readdir, readlink, rename, rm, stat, statfs, symlink } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, readlink, rename, rm, stat, statfs, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { outsidePorts } from "./check.ts";
 import { isCommit } from "./names.ts";
-import { BUILD_USER, type Layout, productUnit, productUser } from "./paths.ts";
+import { buildUser, type Layout, productUnit, productUser } from "./paths.ts";
 import type { Product } from "./products.ts";
 import { must, type Run } from "./run.ts";
 
@@ -66,7 +66,7 @@ function asBuilder(deps: Deps, product: Product) {
   const node = process.execPath;
   const env = {
     PATH: `${dirname(node)}:/usr/local/bin:/usr/bin:/bin`,
-    HOME: paths.buildHome,
+    HOME: paths.buildHome(product.name),
     LANG: "C.UTF-8",
     GIT_TERMINAL_PROMPT: "0",
     // git and npm read only these settings: nothing the repository carries (an .npmrc that names
@@ -74,16 +74,17 @@ function asBuilder(deps: Deps, product: Product) {
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_CONFIG_GLOBAL: "/dev/null",
     npm_config_userconfig: "/dev/null",
-    npm_config_globalconfig: "/dev/null",
+    // A path that doesn't exist, in a folder only root can write: npm reads nothing (it won't take /dev/null twice).
+    npm_config_globalconfig: "/etc/modest-host/npmrc",
     npm_config_git: "git",
     npm_config_ignore_scripts: "true",
     npm_config_registry: "https://registry.npmjs.org/",
     // Its own read-only key, and GitHub's host keys as published (never trusted on first use).
     GIT_SSH_COMMAND: `ssh -i ${paths.key(product.name)} -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${paths.knownHosts}`,
-    npm_config_cache: join(paths.buildHome, "npm-cache"),
+    npm_config_cache: join(paths.buildHome(product.name), "npm-cache"),
     npm_config_update_notifier: "false",
   };
-  return (program: string, args: string[], cwd?: string) => must(deps.run, program, args, { as: BUILD_USER, env, ...(cwd ? { cwd } : {}) });
+  return (program: string, args: string[], cwd?: string) => must(deps.run, program, args, { as: buildUser(product.name), env, ...(cwd ? { cwd } : {}) });
 }
 
 /** The most a release's files may come to, and how many there may be, before it's refused. */
@@ -140,7 +141,7 @@ async function build(deps: Deps, product: Product, commit: string): Promise<void
   const staging = join(paths.releases(name), `.building-${commit}`);
   await rm(staging, { recursive: true, force: true });
   await mkdir(staging, { recursive: true, mode: 0o700 });
-  await must(run, "chown", [BUILD_USER, staging]);
+  await must(run, "chown", [buildUser(name), staging]);
   try {
     await roomFor(deps, product, commit);
     const tarball = join(staging, ".release.tar");
@@ -162,6 +163,8 @@ async function build(deps: Deps, product: Product, commit: string): Promise<void
       // A project's own .npmrc could still set what the environment doesn't: it's never read.
       await rm(join(staging, ".npmrc"), { force: true });
       await builder(join(dirname(process.execPath), "npm"), ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel=error"], staging);
+      await rm(join(paths.buildHome(name), "npm-cache"), { recursive: true, force: true });
+      if ((await freeBytes(staging)) < KEEP_FREE) throw new Error("its dependencies leave less than 1GB free on the disk: make some room");
     }
     // From here, nobody can change it: root owns it, and only the product's own user can read it.
     await must(run, "chown", ["-R", "--no-dereference", `root:${productUser(name)}`, staging]);
@@ -190,7 +193,7 @@ async function prune(paths: Layout, name: string, keep: Set<string>): Promise<vo
  * An older commit is skipped, so a message sent again can't roll a product back.
  */
 export async function deploy(deps: Deps, product: Product, wanted: string | "tip"): Promise<Outcome> {
-  const { paths, run, log } = deps;
+  const { paths, run } = deps;
   const { name } = product;
   const builder = asBuilder(deps, product);
   const source = paths.source(name);
@@ -212,7 +215,7 @@ export async function deploy(deps: Deps, product: Product, wanted: string | "tip
   const tip = (await builder("git", ["--git-dir", source, "rev-parse", "--verify", `refs/heads/${product.branch}^{commit}`])).trim();
   if (!isCommit(tip)) throw new Error(`${product.branch} isn't a commit`);
   if (wanted !== "tip" && wanted !== tip) {
-    const older = await run("git", ["--git-dir", source, "merge-base", "--is-ancestor", wanted, tip], { as: BUILD_USER });
+    const older = await run("git", ["--git-dir", source, "merge-base", "--is-ancestor", wanted, tip], { as: buildUser(name) });
     return {
       skipped:
         older.code === 0
@@ -222,12 +225,30 @@ export async function deploy(deps: Deps, product: Product, wanted: string | "tip
   }
   const before = await running(paths, name);
   if (before === tip) return { skipped: `${tip.slice(0, 7)} is already running` };
+  // A commit that failed isn't tried again by a message (one sent again, say), only by hand.
+  const failed = join(paths.code(name), "failed");
+  if (wanted !== "tip" && (await readPlain(failed).catch(() => null))?.trim() === tip) {
+    return { skipped: `${tip.slice(0, 7)} failed before: push a fix, or try again with modest-host deploy ${name}` };
+  }
+  try {
+    const outcome = await switchTo(deps, product, tip, before);
+    await rm(failed, { force: true });
+    return outcome;
+  } catch (error) {
+    await writeFile(failed, tip);
+    throw error;
+  }
+}
 
+/** Builds `tip` if it isn't built, switches to it, and checks it; any failure after the switch goes back to `before`. */
+async function switchTo(deps: Deps, product: Product, tip: string, before: string | null): Promise<Outcome> {
+  const { paths, run, log } = deps;
+  const { name } = product;
+  await mkdir(paths.releases(name), { recursive: true });
   if ((await freeBytes(paths.releases(name))) < KEEP_FREE) throw new Error("the disk has less than 1GB free: make some room");
   log(`${name}: building ${tip.slice(0, 7)}`);
   if (!(await exists(join(paths.release(name, tip), "server.js")))) await build(deps, product, tip);
   await pointAt(paths, name, tip);
-  // From the switch on, any failure goes back to the version before.
   let failure: string;
   try {
     await must(run, "systemctl", ["restart", productUnit(name)]);
@@ -243,8 +264,14 @@ export async function deploy(deps: Deps, product: Product, wanted: string | "tip
   }
   if (before) {
     await pointAt(paths, name, before);
-    await must(run, "systemctl", ["restart", productUnit(name)]);
-    throw new Error(`${tip.slice(0, 7)} ${failure}, so ${before.slice(0, 7)} is running again: see journalctl -u ${productUnit(name)}`);
+    const back = await run("systemctl", ["restart", productUnit(name)]);
+    const restarted =
+      back.code !== 0
+        ? `and ${before.slice(0, 7)} didn't restart either (${back.stderr.trim()})`
+        : (await deps.answers(product.port))
+          ? `so ${before.slice(0, 7)} is running again`
+          : `and ${before.slice(0, 7)} restarted but isn't answering either`;
+    throw new Error(`${tip.slice(0, 7)} ${failure}, ${restarted}: see journalctl -u ${productUnit(name)}`);
   }
   await run("systemctl", ["stop", productUnit(name)]);
   throw new Error(`${tip.slice(0, 7)} ${failure}, and there's nothing before it to go back to: see journalctl -u ${productUnit(name)}`);

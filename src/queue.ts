@@ -4,7 +4,8 @@
 // them. A newer request for a product replaces an older one still waiting.
 
 import { randomBytes } from "node:crypto";
-import { mkdir, readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { mkdir, open, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { isCommit, isName } from "./names.ts";
 import type { Layout } from "./paths.ts";
@@ -23,6 +24,19 @@ export async function enqueue(paths: Layout, name: string, commit: string | "tip
   await rename(partial, join(paths.requests, name));
 }
 
+/** A request's text, read only if it's a small plain file: a pipe or a link left in the queue can't stall or misdirect it. */
+async function readSmall(path: string): Promise<string> {
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch(() => null);
+  if (!file) return "";
+  try {
+    const found = await file.stat();
+    if (!found.isFile() || found.size > 64) return "";
+    return await file.readFile("utf8");
+  } finally {
+    await file.close();
+  }
+}
+
 /**
  * Takes one waiting request, or null if none is waiting. It's moved aside before
  * it's read, so a newer request for the same product, arriving meanwhile, is kept
@@ -38,8 +52,8 @@ export async function takeOne(paths: Layout): Promise<Request | null> {
       ))
     )
       continue;
-    const commit = (await readFile(taken, "utf8").catch(() => "")).trim();
-    await unlink(taken).catch(() => {});
+    const commit = (await readSmall(taken)).trim();
+    await rm(taken, { recursive: true, force: true }).catch(() => {});
     if (isName(file) && isWanted(commit)) return { name: file, commit };
     console.warn(`modest-host: removed ${JSON.stringify(file.slice(0, 40))} from the deploy requests: it isn't one`);
   }

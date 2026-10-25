@@ -34,11 +34,11 @@ const committed = execFileSync("git", ["ls-files", "--cached", "--others", "--ex
   .split("\n")
   .filter((file) => file && file !== "package-lock.json");
 
-/** IPv4 addresses that are fine to name: documentation (RFC 5737), this machine, any, and private ranges as ranges. */
+/** IPv4 addresses that are fine to name: documentation (RFC 5737), this machine, any, and private ones (which say nothing of a server). */
 const fineAddress = (address: string) =>
   /^(?:192\.0\.2|198\.51\.100|203\.0\.113)\.\d+$/.test(address) ||
   /^(?:127\.\d+\.\d+\.\d+|0\.0\.0\.0)$/.test(address) ||
-  /^(?:10|172\.16|192\.168)\.0\.0$/.test(address);
+  /^(?:10\.\d+|172\.(?:1[6-9]|2\d|3[01])|192\.168)\.\d+\.\d+$/.test(address);
 
 const PRIVATE = [
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----/, "a private key"],
@@ -52,7 +52,7 @@ const PRIVATE = [
 ] as const;
 
 /** IPv6 addresses outside the range kept for documentation (2001:db8::/32), and this machine's own. */
-const IPV6 = /(?<![\w:.])[23][0-9a-f]{3}(?::[0-9a-f]{0,4}){2,7}(?![\w:])/gi;
+const IPV6 = /(?<![\w:.])[23][0-9a-f]{3}(?::[0-9a-f]{0,4}){2,8}(?![\w])/gi;
 const fineV6 = (address: string) => /^2001:db8:/i.test(address);
 
 let lines = 0;
@@ -61,7 +61,8 @@ const self = relative(root, import.meta.filename);
 for (const file of committed.filter((f) => f !== self)) {
   const text = await readFile(join(root, file), "utf8").catch(() => "");
   for (const [pattern, what] of PRIVATE) if (pattern.test(text)) problems.push(`${file}: ${what}: keep it on the server, never in the repository`);
-  for (const [address = ""] of text.matchAll(IPV6)) {
+  for (const [found = ""] of text.matchAll(IPV6)) {
+    const address = found.replace(/:$/, "");
     if (isIPv6(address) && !fineV6(address)) problems.push(`${file}: the address ${address}: use one kept for examples (2001:db8::)`);
   }
   for (const [address = ""] of text.matchAll(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g)) {

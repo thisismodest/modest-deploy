@@ -147,7 +147,7 @@ test("git and npm run as the build user, with GitHub's keys pinned and the produ
     await writeFile(join(remote, "x"), "x");
     await deploy(deps, PRODUCT, "tip");
     const git = seen.filter((s) => s.program === "git");
-    assert.ok(git.length > 0 && git.every((s) => s.as === "modest-host-build"));
+    assert.ok(git.length > 0 && git.every((s) => s.as === "mb-shop"));
     const ssh = git[0]?.env?.GIT_SSH_COMMAND ?? "";
     assert.match(ssh, /StrictHostKeyChecking=yes/);
     assert.match(ssh, /-i \S+\/etc\/modest-host\/keys\/shop /);
@@ -201,4 +201,19 @@ test("a repository's .npmrc is never read by npm, and npm's and git's settings a
     assert.equal(seen?.env?.npm_config_ignore_scripts, "true");
     assert.equal(seen?.env?.npm_config_userconfig, "/dev/null");
     assert.equal(seen?.env?.GIT_CONFIG_GLOBAL, "/dev/null");
+  }));
+
+test("a commit that failed isn't tried again by a message sent again, only by hand", () =>
+  onServer(async (paths) => {
+    const { commits, deps, answers, remote, recorded } = await setUp(paths, ["one"]);
+    await deploy(deps, PRODUCT, "tip");
+    const [, broken = ""] = [...commits, ...origin(remote, ["broken"])];
+    answers.push(false, true);
+    await assert.rejects(deploy(deps, PRODUCT, broken));
+    const restarts = recorded.filter((c) => c[1] === "restart").length;
+    const again = await deploy(deps, PRODUCT, broken);
+    assert.ok("skipped" in again && /failed before/.test(again.skipped));
+    assert.equal(recorded.filter((c) => c[1] === "restart").length, restarts, "the product wasn't restarted");
+    answers.push(true);
+    assert.deepEqual(await deploy(deps, PRODUCT, "tip"), { deployed: broken }, "by hand, it's tried again");
   }));
