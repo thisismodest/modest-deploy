@@ -90,6 +90,7 @@
                 <tr><td>A package's install script</td><td>Dependencies installed exactly as the lockfile says, with install scripts off, by a separate user</td></tr>
                 <tr><td>A repository's own npm or git settings</td><td>Its <code>.npmrc</code> is removed before npm runs, and npm's and git's settings are pinned, so nothing it carries chooses what runs</td></tr>
                 <tr><td>A build reaching another product</td><td>Each product has its own build user, which alone can read its deploy key and its copy of the repository</td></tr>
+                <tr><td>A build that ran code of its own</td><td>All the build user's processes stopped after every step, before root touches its files; each deploy starts it clean; hard links refused</td></tr>
                 <tr><td>A commit filling the shared disk</td><td>Releases over 1GB or 200,000 files refused, sizes counted before anything is written, and 1GB always kept free</td></tr>
                 <tr><td>A bad deploy</td><td>The product is checked once started, and the version before comes back if it doesn't answer</td></tr>
                 <tr><td>An unsafe server</td><td><code>check</code> looks at SSH, automatic updates, and what's listening, and install and add refuse until it's fixed</td></tr>
