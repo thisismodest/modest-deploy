@@ -20,7 +20,7 @@ export const PRODUCT: Product = {
 
 /** A temporary server, removed when `run` ends. */
 export async function onServer(run: (paths: Layout) => Promise<void>): Promise<void> {
-  const root = await mkdtemp(join(tmpdir(), "modest-host-"));
+  const root = await mkdtemp(join(tmpdir(), "modest-deploy-"));
   try {
     await run(layout(root));
   } finally {

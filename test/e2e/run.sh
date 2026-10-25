@@ -1,5 +1,5 @@
 #!/bin/sh
-# The end-to-end test: builds modest-host, starts a fresh Ubuntu server with systemd in
+# The end-to-end test: builds modest-deploy, starts a fresh Ubuntu server with systemd in
 # Docker, and runs test/e2e/inside.ts in it. Needs Docker, and network access (for
 # Node, Caddy, npm, and GitHub's published host keys).
 #
@@ -8,7 +8,7 @@
 set -eu
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$here/../.."
-name=modest-host-e2e
+name=modest-deploy-e2e
 
 docker build -q -t "$name" "$here" >/dev/null
 docker rm -f "$name" >/dev/null 2>&1 || true
@@ -17,10 +17,10 @@ docker run -d --name "$name" --privileged --cgroupns=host -v /sys/fs/cgroup:/sys
 trap '[ "${1:-}" = "--keep" ] || docker rm -f "$name" >/dev/null 2>&1' EXIT
 
 until docker exec "$name" systemctl is-system-running 2>/dev/null | grep -qE "running|degraded"; do sleep 1; done
-docker exec "$name" mkdir -p /e2e /opt/modest-host
-# Installed as the README says: the repository's files in /opt/modest-host, run as they are.
-(cd "$root" && COPYFILE_DISABLE=1 tar -cf - package.json LICENSE src) | docker exec -i "$name" tar -xf - -C /opt/modest-host
-docker exec "$name" sh -c 'chmod 755 /opt/modest-host/src/cli.ts && ln -s /opt/modest-host/src/cli.ts /usr/local/bin/modest-host'
+docker exec "$name" mkdir -p /e2e /opt/modest-deploy
+# Installed as the README says: the repository's files in /opt/modest-deploy, run as they are.
+(cd "$root" && COPYFILE_DISABLE=1 tar -cf - package.json LICENSE src) | docker exec -i "$name" tar -xf - -C /opt/modest-deploy
+docker exec "$name" sh -c 'chmod 755 /opt/modest-deploy/src/cli.ts && ln -s /opt/modest-deploy/src/cli.ts /usr/local/bin/modest-deploy'
 docker cp "$here/inside.ts" "$name":/e2e/inside.ts
 docker cp "$here/product.js" "$name":/e2e/product.js
 docker exec "$name" node /e2e/inside.ts

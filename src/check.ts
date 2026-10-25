@@ -1,5 +1,5 @@
-// What modest-host relies on, checked on the server itself, each with what to do if
-// it isn't so. modest-host doesn't set the server up: it checks the setup is safe.
+// What modest-deploy relies on, checked on the server itself, each with what to do if
+// it isn't so. modest-deploy doesn't set the server up: it checks the setup is safe.
 
 import { readFile } from "node:fs/promises";
 import type { Run } from "./run.ts";
@@ -40,7 +40,7 @@ export async function checkServer(run: Run, read = (path: string) => readFile(pa
   const major = Number(process.versions.node.split(".")[0]);
   add(major >= 24, `Node 24 or later (this is ${process.versions.node})`, "install Node 24 or later, from NodeSource or nodejs.org");
   add(process.getuid?.() === 0, "running as root", "run it with sudo: it makes users, services, and Caddy sites");
-  add(await works("systemctl", ["--version"]), "systemd", "modest-host needs a server that runs systemd, such as Ubuntu");
+  add(await works("systemctl", ["--version"]), "systemd", "modest-deploy needs a server that runs systemd, such as Ubuntu");
   add(await works("caddy", ["version"]), "Caddy installed", "install Caddy from its own package repository: see caddyserver.com/docs/install");
   add(await works("systemctl", ["is-active", "--quiet", "caddy"]), "Caddy running", "start it: systemctl enable --now caddy");
   for (const [program, args] of [
@@ -129,13 +129,13 @@ export async function checkServer(run: Run, read = (path: string) => readFile(pa
     extra === null ? "ss (iproute2) is needed to see what's listening" : `stop, or listen only on 127.0.0.1: ${extra.join(", ")}`,
   );
 
-  // The services run as users of their own, so Node and modest-host must be readable by others (not under /root, nor installed with a strict umask).
+  // The services run as users of their own, so Node and modest-deploy must be readable by others (not under /root, nor installed with a strict umask).
   if (cli) {
     const readable = await run(process.execPath, [cli, "help"], { as: "nobody" });
     add(
       readable.code === 0,
-      "Node and modest-host readable by its services",
-      `install Node system-wide (not with nvm in a home folder), and clone modest-host somewhere everyone can read, such as /opt/modest-host: ${process.execPath}, ${cli}`,
+      "Node and modest-deploy readable by its services",
+      `install Node system-wide (not with nvm in a home folder), and clone modest-deploy somewhere everyone can read, such as /opt/modest-deploy: ${process.execPath}, ${cli}`,
     );
   }
   return findings;

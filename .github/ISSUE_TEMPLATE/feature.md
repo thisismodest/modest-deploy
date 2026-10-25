@@ -1,6 +1,6 @@
 ---
 name: An idea
-about: Something modest-host could do (please read CONTRIBUTING.md first)
+about: Something modest-deploy could do (please read CONTRIBUTING.md first)
 ---
 
 **What it's for:** the problem, for a real product or server

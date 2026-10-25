@@ -85,7 +85,7 @@ async function handle(paths: Layout, seen: Set<string>, req: IncomingMessage, re
   // Remembered once saved: if saving fails, GitHub's own redelivery still gets through.
   await enqueue(paths, name, decision.deploy);
   remember();
-  console.log(`modest-host: ${name}: asked to deploy ${decision.deploy}`);
+  console.log(`modest-deploy: ${name}: asked to deploy ${decision.deploy}`);
   answer(res, 202, `Deploying ${decision.deploy.slice(0, 7)}`);
 }
 
@@ -93,7 +93,7 @@ export function createListener(paths: Layout): Server {
   const seen = new Set<string>();
   const server = createServer((req, res) => {
     handle(paths, seen, req, res).catch((error) => {
-      console.error(`modest-host: the listener failed: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`modest-deploy: the listener failed: ${error instanceof Error ? error.message : String(error)}`);
       if (!res.headersSent) answer(res, 500, "Failed");
     });
   });

@@ -1,4 +1,4 @@
-# modest-host
+# modest-deploy
 
 Deploy small Node products to your own server: launch each with a command, and
 deploy it on every push that passes CI. No dependencies.
@@ -9,7 +9,7 @@ deploy it on every push that passes CI. No dependencies.
 
 ## Why
 
-Launching a product shouldn't mean setting up hosting again. modest-host does the
+Launching a product shouldn't mean setting up hosting again. modest-deploy does the
 same few things for every product, the same way each time, so each new one is a
 command, and every push after that deploys itself.
 
@@ -25,18 +25,18 @@ command, and every push after that deploys itself.
 ## What it does
 
 **Install, once per server.** On a server you've set up (see "Before you install"),
-`modest-host install` adds its own parts: the deploy listener, the folder Caddy
+`modest-deploy install` adds its own parts: the deploy listener, the folder Caddy
 reads products' sites from, and the nightly backup.
 
-**Check, any time.** `modest-host check` checks what it relies on, and says plainly
-what to fix: Node 24 or later, Caddy, and systemd present; Node and modest-host
+**Check, any time.** `modest-deploy check` checks what it relies on, and says plainly
+what to fix: Node 24 or later, Caddy, and systemd present; Node and modest-deploy
 readable by the services' own users; SSH by key only, with no root login (as SSH
 treats a connection from outside); automatic security updates on; and nothing
 listening to the outside but SSH, HTTP, and HTTPS. `install` and `add` won't run
 while a check fails, unless you add `--anyway`.
 
 **Launch a product, with one command from your laptop.**
-`modest-host launch <name> <domain>`:
+`modest-deploy launch <name> <domain>`:
 
 - makes the product's GitHub repository, from your template if you name one;
 - on the server, gives it a system user, a folder, an environment file for its keys,
@@ -59,7 +59,7 @@ while a check fails, unless you add `--anyway`.
 5. starts the new version, checks it answers, and only on 127.0.0.1, and goes back
    to the previous one if not.
 
-`modest-host deploy <name>` deploys `main`'s newest commit by hand, whether or not its
+`modest-deploy deploy <name>` deploys `main`'s newest commit by hand, whether or not its
 CI passed: that's your choice to make.
 
 **Look after the products.** Each product's databases (its files ending `.db`,
@@ -80,8 +80,8 @@ A product is a Node app in a GitHub repository that:
 
 ## Before you install
 
-modest-host doesn't set up the server itself: your hosting provider and a few
-minutes by hand do it better, and `modest-host check` checks the result. On a new
+modest-deploy doesn't set up the server itself: your hosting provider and a few
+minutes by hand do it better, and `modest-deploy check` checks the result. On a new
 Ubuntu server:
 
 - sign in with an SSH key (add it when creating the server), with password sign-in
@@ -96,26 +96,26 @@ Ubuntu server:
 On the server, from npm:
 
 ```sh
-sudo npm install -g modest-host
-sudo modest-host check
-sudo modest-host install --domain deploy.example.org
+sudo npm install -g modest-deploy
+sudo modest-deploy check
+sudo modest-deploy install --domain deploy.example.org
 ```
 
 Or from this repository, which Node runs as it is, with nothing to build:
 
 ```sh
-sudo git clone https://github.com/thisismodest/modest-host.git /opt/modest-host
-sudo ln -s /opt/modest-host/src/cli.ts /usr/local/bin/modest-host
+sudo git clone https://github.com/thisismodest/modest-deploy.git /opt/modest-deploy
+sudo ln -s /opt/modest-deploy/src/cli.ts /usr/local/bin/modest-deploy
 ```
 
 Then point the deploy domain's DNS at the server: GitHub's messages arrive there. For
 `launch`, install it on your laptop too, the same way.
 
-## Updating modest-host
+## Updating modest-deploy
 
 ```sh
-sudo npm install -g modest-host@latest     # or: sudo git -C /opt/modest-host pull
-sudo modest-host install
+sudo npm install -g modest-deploy@latest     # or: sudo git -C /opt/modest-deploy pull
+sudo modest-deploy install
 ```
 
 Running `install` again rewrites every unit it made, the products' included, so they
@@ -127,13 +127,13 @@ Stop the product, put the copy back as the product's own (removing SQLite's
 `-wal` and `-shm` files, which belong to the database being replaced), and start it:
 
 ```sh
-sudo systemctl stop modest-host-shop
-sudo install -o mh-shop -g mh-shop -m 600 /var/backups/modest-host/shop/2026-10-25/app.db /var/lib/modest-host/shop/app.db
-sudo rm -f /var/lib/modest-host/shop/app.db-wal /var/lib/modest-host/shop/app.db-shm
-sudo systemctl start modest-host-shop
+sudo systemctl stop modest-deploy-shop
+sudo install -o md-shop -g md-shop -m 600 /var/backups/modest-deploy/shop/2026-10-25/app.db /var/lib/modest-deploy/shop/app.db
+sudo rm -f /var/lib/modest-deploy/shop/app.db-wal /var/lib/modest-deploy/shop/app.db-shm
+sudo systemctl start modest-deploy-shop
 ```
 
-Copy `/var/backups/modest-host` off the server too, or turn on your provider's
+Copy `/var/backups/modest-deploy` off the server too, or turn on your provider's
 backups: copies on the same disk don't survive losing it.
 
 ## What it doesn't do

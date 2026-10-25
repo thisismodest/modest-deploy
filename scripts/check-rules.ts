@@ -7,7 +7,7 @@
 //   Source", CVE-2021-42574: code that reads one way and runs another); write
 //   them as escapes ("‮") instead;
 // - nothing private in any committed file: no IP address outside the ranges kept
-//   for examples and this machine, no private key, and no token. modest-host is
+//   for examples and this machine, no private key, and no token. modest-deploy is
 //   public, and holds nothing about any one server: those live on the server.
 //
 // It also counts the source's lines. There's no limit: the rule is to write only
@@ -26,7 +26,7 @@ const problems: string[] = [];
 
 const pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 for (const kind of ["dependencies", "peerDependencies", "optionalDependencies", "bundleDependencies", "bundledDependencies"]) {
-  for (const name of Object.keys(pkg[kind] ?? {})) problems.push(`package.json: ${kind} has ${name}: modest-host has no runtime dependencies`);
+  for (const name of Object.keys(pkg[kind] ?? {})) problems.push(`package.json: ${kind} has ${name}: modest-deploy has no runtime dependencies`);
 }
 
 // Every file git would commit: tracked, and new but not ignored.
@@ -68,7 +68,7 @@ for (const file of committed.filter((f) => f !== self)) {
   for (const [address = ""] of text.matchAll(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g)) {
     if (!fineAddress(address)) problems.push(`${file}: the address ${address}: use one kept for examples (192.0.2.x, 198.51.100.x, 203.0.113.x)`);
   }
-  // The end-to-end test's stand-in product imports modest-auth, as a real product would: it's not modest-host's code.
+  // The end-to-end test's stand-in product imports modest-auth, as a real product would: it's not modest-deploy's code.
   if (!CODE.has(extname(file)) || file === "test/e2e/product.js") continue;
   if (file.startsWith("src/") && !/\.test\.[a-z]+$/.test(file)) lines += text.split("\n").length;
   for (const [found] of text.matchAll(/[\p{Cf}\p{Default_Ignorable_Code_Point}⠀]/gu)) {

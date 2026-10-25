@@ -60,7 +60,7 @@ test("password sign-in, root sign-in, no automatic updates, and an open port are
 test("each product runs as its own user, sandboxed, able to bind only its own port, with the server's secrets out of reach", () => {
   const unit = productService(layout(), PRODUCT, "/usr/bin/node");
   for (const line of [
-    "User=mh-shop",
+    "User=md-shop",
     "NoNewPrivileges=yes",
     "ProtectSystem=strict",
     "ProtectHome=yes",
@@ -68,14 +68,14 @@ test("each product runs as its own user, sandboxed, able to bind only its own po
     "CapabilityBoundingSet=",
     "SocketBindAllow=tcp:4100",
     "SocketBindDeny=any",
-    "StateDirectory=modest-host/shop",
+    "StateDirectory=modest-deploy/shop",
     "MemoryMax=512M",
   ]) {
     assert.ok(unit.split("\n").includes(line), line);
   }
-  assert.match(unit, /InaccessiblePaths=.*\/etc\/modest-host\/secrets.*\/etc\/modest-host\/keys.*\/etc\/modest-host\/env/);
-  const listener = listenerService(layout(), "/usr/bin/node", "/usr/lib/node_modules/modest-host/dist/cli.js");
-  for (const line of ["User=modest-host", "ReadWritePaths=/var/spool/modest-host", "IPAddressDeny=any", "SocketBindAllow=tcp:9327"])
+  assert.match(unit, /InaccessiblePaths=.*\/etc\/modest-deploy\/secrets.*\/etc\/modest-deploy\/keys.*\/etc\/modest-deploy\/env/);
+  const listener = listenerService(layout(), "/usr/bin/node", "/usr/lib/node_modules/modest-deploy/dist/cli.js");
+  for (const line of ["User=modest-deploy", "ReadWritePaths=/var/spool/modest-deploy", "IPAddressDeny=any", "SocketBindAllow=tcp:9327"])
     assert.ok(listener.split("\n").includes(line), line);
 });
 
@@ -84,7 +84,7 @@ test("nothing unchecked can reach a unit or a Caddy site, so no value can add a 
   assert.throws(() => productSite({ ...PRODUCT, domain: "shop.example.org {\n}\nevil.example.org" }));
   assert.throws(() => productSite({ ...PRODUCT, port: 22 }));
   assert.throws(() => hostSite("x.org\n\troot * /"));
-  assert.equal(productSite(PRODUCT), "# Written by modest-host: changes here are replaced.\nshop.example.org {\n\treverse_proxy 127.0.0.1:4100\n}\n");
+  assert.equal(productSite(PRODUCT), "# Written by modest-deploy: changes here are replaced.\nshop.example.org {\n\treverse_proxy 127.0.0.1:4100\n}\n");
 });
 
 test("an SSH destination is a host or user@host, never anything a shell or ssh would read as more", () => {
@@ -107,7 +107,7 @@ test("launch makes the repository, adds the product over SSH, and gives GitHub t
           repo: "example/shop",
           webhook: "https://deploy.example.org/deploy/shop",
           secret,
-          deployKey: "ssh-ed25519 AAAA modest-host shop",
+          deployKey: "ssh-ed25519 AAAA modest-deploy shop",
         }),
       );
     if (program === "gh" && args[0] === "api" && args.length === 2) return ok("[]");
@@ -120,7 +120,7 @@ test("launch makes the repository, adds the product over SSH, and gives GitHub t
   assert.deepEqual(calls.find((c) => c.args[1] === "create")?.args, ["repo", "create", "example/shop", "--private", "--template", "example/template"]);
   assert.deepEqual(calls.find((c) => c.program === "ssh")?.args.slice(4), [
     "sudo",
-    "modest-host",
+    "modest-deploy",
     "add",
     "shop",
     "--domain",
@@ -155,7 +155,7 @@ test("launch refuses anything unsafe before running anything", async () => {
 });
 
 test("launch refuses a server's answer that would send the webhook elsewhere, or add a key that isn't one plain key", async () => {
-  const good = { name: "shop", webhook: "https://deploy.example.org/deploy/shop", secret: "c".repeat(64), deployKey: "ssh-ed25519 AAAA modest-host shop" };
+  const good = { name: "shop", webhook: "https://deploy.example.org/deploy/shop", secret: "c".repeat(64), deployKey: "ssh-ed25519 AAAA modest-deploy shop" };
   for (const bad of [
     { ...good, name: "other" },
     { ...good, secret: "x" },
@@ -195,7 +195,7 @@ test("launch run again updates the webhook already there, and doesn't add the sa
           name: "shop",
           webhook: "https://deploy.example.org/deploy/shop",
           secret: "d".repeat(64),
-          deployKey: "ssh-ed25519 AAAA modest-host shop",
+          deployKey: "ssh-ed25519 AAAA modest-deploy shop",
         }),
       );
     if (args[1] === "repos/example/shop/keys?per_page=100") return ok(JSON.stringify([{ id: 1, key: "ssh-ed25519 AAAA" }]));
@@ -214,7 +214,7 @@ test("a backup copy is taken only if it's a plain file of the product's own: a l
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const { takeCopy } = await import("./server.ts");
-  const dir = await mkdtemp(join(tmpdir(), "modest-host-copy-"));
+  const dir = await mkdtemp(join(tmpdir(), "modest-deploy-copy-"));
   const me = process.getuid?.() ?? 0;
   const precious = join(dir, "precious");
   await writeFile(precious, "not the product's", { mode: 0o644 });

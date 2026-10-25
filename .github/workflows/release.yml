@@ -40,7 +40,7 @@ jobs:
       - name: Already on npm?
         id: published
         run: |
-          if npm view "modest-host@${GITHUB_REF_NAME#v}" version >/dev/null 2>&1; then echo "already=true" >> "$GITHUB_OUTPUT"; fi
+          if npm view "modest-deploy@${GITHUB_REF_NAME#v}" version >/dev/null 2>&1; then echo "already=true" >> "$GITHUB_OUTPUT"; fi
       - if: steps.published.outputs.already != 'true'
         run: npm publish --provenance --access public
 

@@ -60,9 +60,9 @@ test("the newest commit on main is built, switched to, and restarted, and the re
     assert.deepEqual(await deploy(deps, PRODUCT, first), { deployed: first });
     assert.equal(await running(paths, "shop"), first);
     assert.equal(await readFile(join(paths.current("shop"), "server.js"), "utf8"), "one");
-    assert.ok(recorded.some((c) => c.join(" ") === "systemctl restart modest-host-shop.service"));
+    assert.ok(recorded.some((c) => c.join(" ") === "systemctl restart modest-deploy-shop.service"));
     assert.ok(
-      recorded.some((c) => c[0] === "chown" && c.includes("root:mh-shop")),
+      recorded.some((c) => c[0] === "chown" && c.includes("root:md-shop")),
       "owned by root, readable by the product",
     );
   }));
@@ -152,7 +152,7 @@ test("git and npm run as the build user, with GitHub's keys pinned and the produ
     assert.ok(git.length > 0 && git.every((s) => s.as === "mb-shop"));
     const ssh = git[0]?.env?.GIT_SSH_COMMAND ?? "";
     assert.match(ssh, /StrictHostKeyChecking=yes/);
-    assert.match(ssh, /-i \S+\/etc\/modest-host\/keys\/shop /);
+    assert.match(ssh, /-i \S+\/etc\/modest-deploy\/keys\/shop /);
   }));
 
 test("a package.json that's a link (to /dev/zero, or a secret) is refused, never read by root", () =>

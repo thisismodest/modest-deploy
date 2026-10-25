@@ -1,4 +1,4 @@
-// The commands run on the server, as root: install modest-host's own parts, add and
+// The commands run on the server, as root: install modest-deploy's own parts, add and
 // remove products, and copy their databases. Everything is checked first, and
 // written whole; nothing a product keeps is deleted as a side effect.
 
@@ -99,7 +99,7 @@ async function listening(server: Server): Promise<Set<number>> {
 }
 
 /**
- * Installs modest-host's own parts, or, run again (after updating modest-host), brings
+ * Installs modest-deploy's own parts, or, run again (after updating modest-deploy), brings
  * every unit it wrote up to date, products' included. The deploy domain can be left
  * out then: the one already set is kept.
  */
@@ -111,7 +111,7 @@ export async function install(server: Server, given: string | undefined, anyway 
   await checked(server, anyway);
   await systemUser(server, LISTENER_USER);
 
-  await folder(server, "/etc/modest-host", 0o755);
+  await folder(server, "/etc/modest-deploy", 0o755);
   await folder(server, paths.products, 0o755);
   await folder(server, paths.secrets, 0o750, LISTENER_USER);
   await chown(paths.secrets, 0, Number((await must(run, "id", ["-g", LISTENER_USER])).trim()));
@@ -119,11 +119,11 @@ export async function install(server: Server, given: string | undefined, anyway 
   await folder(server, paths.keys, 0o711);
   await folder(server, paths.envs, 0o700);
   await folder(server, paths.caddy, 0o755);
-  await folder(server, "/srv/modest-host", 0o755);
-  await folder(server, "/var/lib/modest-host", 0o755);
-  await folder(server, "/var/backups/modest-host", 0o700);
+  await folder(server, "/srv/modest-deploy", 0o755);
+  await folder(server, "/var/lib/modest-deploy", 0o755);
+  await folder(server, "/var/backups/modest-deploy", 0o700);
   await folder(server, paths.buildHomes, 0o711);
-  await folder(server, "/var/spool/modest-host", 0o700, LISTENER_USER);
+  await folder(server, "/var/spool/modest-deploy", 0o700, LISTENER_USER);
   await folder(server, paths.writing, 0o700, LISTENER_USER);
   await folder(server, paths.requests, 0o700, LISTENER_USER);
 
@@ -133,7 +133,7 @@ export async function install(server: Server, given: string | undefined, anyway 
   // Caddy first: if it can't use the change, its own Caddyfile is put back as it was, and nothing else has changed.
   const caddyfile = await readFile(paths.caddyfile, "utf8").catch(() => "");
   if (!caddyfile.split("\n").some((line) => line.trim() === caddyImport(paths))) {
-    await writeWhole(paths.caddyfile, `${caddyfile.replace(/\n*$/, "\n")}\n# Added by modest-host: its products' sites.\n${caddyImport(paths)}\n`);
+    await writeWhole(paths.caddyfile, `${caddyfile.replace(/\n*$/, "\n")}\n# Added by modest-deploy: its products' sites.\n${caddyImport(paths)}\n`);
   }
   try {
     await caddyWith(server, paths.caddySite("_host"), hostSite(domain));
@@ -144,11 +144,11 @@ export async function install(server: Server, given: string | undefined, anyway 
   }
   await writeWhole(paths.host, `${JSON.stringify({ domain }, null, 2)}\n`);
 
-  await writeWhole(paths.unit("modest-host-listener.service"), listenerService(paths, node, cli));
-  await writeWhole(paths.unit("modest-host-deploy.service"), deployService(node, cli));
-  await writeWhole(paths.unit("modest-host-deploy.path"), deployPath(paths));
-  await writeWhole(paths.unit("modest-host-backup.service"), backupService(node, cli));
-  await writeWhole(paths.unit("modest-host-backup.timer"), BACKUP_TIMER);
+  await writeWhole(paths.unit("modest-deploy-listener.service"), listenerService(paths, node, cli));
+  await writeWhole(paths.unit("modest-deploy-deploy.service"), deployService(node, cli));
+  await writeWhole(paths.unit("modest-deploy-deploy.path"), deployPath(paths));
+  await writeWhole(paths.unit("modest-deploy-backup.service"), backupService(node, cli));
+  await writeWhole(paths.unit("modest-deploy-backup.timer"), BACKUP_TIMER);
   // Products' units are rewritten only if they've changed, and only those products restarted.
   const products = await listProducts(paths);
   const changed: Product[] = [];
@@ -159,8 +159,8 @@ export async function install(server: Server, given: string | undefined, anyway 
     changed.push(product);
   }
   await must(run, "systemctl", ["daemon-reload"]);
-  await must(run, "systemctl", ["enable", "--now", "modest-host-listener.service", "modest-host-deploy.path", "modest-host-backup.timer"]);
-  await must(run, "systemctl", ["restart", "modest-host-listener.service"]);
+  await must(run, "systemctl", ["enable", "--now", "modest-deploy-listener.service", "modest-deploy-deploy.path", "modest-deploy-backup.timer"]);
+  await must(run, "systemctl", ["restart", "modest-deploy-listener.service"]);
   for (const product of changed) {
     if ((await run("systemctl", ["is-active", "--quiet", productUnit(product.name)])).code !== 0) continue;
     await run("systemctl", ["restart", productUnit(product.name)]);
@@ -168,12 +168,12 @@ export async function install(server: Server, given: string | undefined, anyway 
     server.log(
       answering
         ? `${product.name}: restarted with its updated unit, and answering.`
-        : `${product.name}: restarted with its updated unit, but NOT answering: see modest-host logs ${product.name}`,
+        : `${product.name}: restarted with its updated unit, but NOT answering: see modest-deploy logs ${product.name}`,
     );
   }
   server.log(`Installed. Point ${domain}'s DNS at this server: GitHub's messages arrive there.`);
   if (before && before.domain !== domain && products.length) {
-    server.log(`The deploy domain was ${before.domain}: run modest-host launch again for each product, so GitHub's webhooks point to ${domain}.`);
+    server.log(`The deploy domain was ${before.domain}: run modest-deploy launch again for each product, so GitHub's webhooks point to ${domain}.`);
   }
 }
 
@@ -222,14 +222,14 @@ export async function add(server: Server, name: string, domain: string, repo: st
   if (!deployKey) {
     await rm(paths.key(name), { force: true });
     await rm(`${paths.key(name)}.pub`, { force: true });
-    await must(run, "ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-C", `modest-host ${name}`, "-f", paths.key(name)]);
+    await must(run, "ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-C", `modest-deploy ${name}`, "-f", paths.key(name)]);
     // Made by root in a folder only root can write, then given to this product's build user alone.
     await chown(paths.key(name), await uid(server, builder), 0);
     await chmod(paths.key(name), 0o600);
     deployKey = (await readFile(`${paths.key(name)}.pub`, "utf8")).trim();
   }
   if ((await readFile(paths.env(name), "utf8").catch(() => null)) === null) {
-    await writeWhole(paths.env(name), `# ${name}'s own keys, one KEY=value a line. After a change: modest-host restart ${name}\n`, 0o600);
+    await writeWhole(paths.env(name), `# ${name}'s own keys, one KEY=value a line. After a change: modest-deploy restart ${name}\n`, 0o600);
   }
 
   await folder(server, paths.code(name), 0o755);
@@ -300,7 +300,7 @@ export async function backup(server: Server, today = new Date().toISOString().sl
   let failed = 0;
   const failure = (product: string, db: string, why: string) => {
     failed++;
-    console.error(`modest-host: ${product}: ${db} wasn't copied: ${why}`);
+    console.error(`modest-deploy: ${product}: ${db} wasn't copied: ${why}`);
   };
   for (const product of await listProducts(paths)) {
     // One product's trouble (its user missing, a file gone part way) never stops the others' copies.

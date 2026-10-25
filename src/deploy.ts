@@ -75,7 +75,7 @@ function asBuilder(deps: Deps, product: Product) {
     GIT_CONFIG_GLOBAL: "/dev/null",
     npm_config_userconfig: "/dev/null",
     // A path that doesn't exist, in a folder only root can write: npm reads nothing (it won't take /dev/null twice).
-    npm_config_globalconfig: "/etc/modest-host/npmrc",
+    npm_config_globalconfig: "/etc/modest-deploy/npmrc",
     npm_config_git: "git",
     npm_config_ignore_scripts: "true",
     npm_config_registry: "https://registry.npmjs.org/",
@@ -251,7 +251,7 @@ export async function deploy(deps: Deps, product: Product, wanted: string | "tip
     const said = error instanceof Error ? error.message : String(error);
     if (/HOST IDENTIFICATION HAS CHANGED|Host key verification failed/.test(said)) {
       throw new Error(
-        "the server answering as github.com didn't have GitHub's host key, so nothing was fetched (if GitHub has changed its keys, run modest-host install again to fetch them)",
+        "the server answering as github.com didn't have GitHub's host key, so nothing was fetched (if GitHub has changed its keys, run modest-deploy install again to fetch them)",
       );
     }
     if (/Permission denied \(publickey\)|Repository not found/.test(said)) {
@@ -274,7 +274,7 @@ export async function deploy(deps: Deps, product: Product, wanted: string | "tip
   // A commit that failed isn't tried again by a message (one sent again, say), only by hand.
   const failed = join(paths.code(name), "failed");
   if (wanted !== "tip" && (await readPlain(failed).catch(() => null))?.trim() === tip) {
-    return { skipped: `${tip.slice(0, 7)} failed before: push a fix, or try again with modest-host deploy ${name}` };
+    return { skipped: `${tip.slice(0, 7)} failed before: push a fix, or try again with modest-deploy deploy ${name}` };
   }
   try {
     const outcome = await switchTo(deps, product, tip, before);

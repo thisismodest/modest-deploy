@@ -1,4 +1,4 @@
-# The end-to-end test: modest-host installed on a fresh Ubuntu server with systemd (in
+# The end-to-end test: modest-deploy installed on a fresh Ubuntu server with systemd (in
 # Docker), with two products launched and deployed through signed webhook messages,
 # and every promise checked on the real system. See test/e2e/. Actions pinned to
 # exact commits, as in ci.yml.

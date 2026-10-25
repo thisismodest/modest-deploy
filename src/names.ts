@@ -2,7 +2,7 @@
 // unit name, a user name, a Caddy file, or an argument. Each is strict enough that
 // nothing matching it can mean anything else (no "/", "..", spaces, or quotes).
 
-/** A product's name: lowercase letters, digits, and hyphens, 2 to 29 long (so "mh-" + name fits a 32-character user name). */
+/** A product's name: lowercase letters, digits, and hyphens, 2 to 29 long (so "md-" + name fits a 32-character user name). */
 export const isName = (value: unknown): value is string => typeof value === "string" && /^[a-z][a-z0-9-]{0,27}[a-z0-9]$/.test(value) && !value.includes("--");
 
 /** A domain: lowercase labels of letters, digits, and hyphens, at least two, ending in letters. */

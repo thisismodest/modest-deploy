@@ -1,5 +1,5 @@
 {
-  "name": "modest-host",
+  "name": "modest-deploy",
   "version": "0.1.0",
   "description": "Deploy small Node products to your own server: launch each with a command, deploy on every push that passes CI. No dependencies.",
   "license": "MIT",
@@ -9,7 +9,7 @@
     "node": ">=24"
   },
   "bin": {
-    "modest-host": "./dist/cli.js"
+    "modest-deploy": "./dist/cli.js"
   },
   "files": [
     "dist",
@@ -43,10 +43,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/thisismodest/modest-host.git"
+    "url": "git+https://github.com/thisismodest/modest-deploy.git"
   },
   "bugs": {
-    "url": "https://github.com/thisismodest/modest-host/issues"
+    "url": "https://github.com/thisismodest/modest-deploy/issues"
   },
-  "homepage": "https://thisismodest.com/modest-host/"
+  "homepage": "https://thisismodest.com/modest-deploy/"
 }

@@ -46,7 +46,7 @@ export async function launch(run: Run, options: Launch, log: (line: string) => v
   const answer = await must(
     run,
     "ssh",
-    ["-o", "BatchMode=yes", "--", server, "sudo", "modest-host", "add", name, "--domain", domain, "--repo", repo, "--json"],
+    ["-o", "BatchMode=yes", "--", server, "sudo", "modest-deploy", "add", name, "--domain", domain, "--repo", repo, "--json"],
     { env, timeout: 120_000 },
   );
   // The JSON is the last line: check's report comes before it. Each part is checked
@@ -70,7 +70,7 @@ export async function launch(run: Run, options: Launch, log: (line: string) => v
     hook.password !== "" ||
     hook.hash !== ""
   ) {
-    throw new Error("the server's answer wasn't what modest-host add gives");
+    throw new Error("the server's answer wasn't what modest-deploy add gives");
   }
   const webhook = hook.href;
   log(`Added ${name} on ${server}.`);
@@ -78,7 +78,7 @@ export async function launch(run: Run, options: Launch, log: (line: string) => v
   // Run again, launch updates what's there rather than adding a second webhook or key.
   const keys = JSON.parse(await gh(["api", `repos/${repo}/keys?per_page=100`])) as { key?: string }[];
   if (!keys.some((k) => k.key?.split(" ").slice(0, 2).join(" ") === key)) {
-    await gh(["api", "--method", "POST", `repos/${repo}/keys`, "--input", "-"], JSON.stringify({ title: `modest-host (${server})`, key, read_only: true }));
+    await gh(["api", "--method", "POST", `repos/${repo}/keys`, "--input", "-"], JSON.stringify({ title: `modest-deploy (${server})`, key, read_only: true }));
   }
   const hooks = JSON.parse(await gh(["api", `repos/${repo}/hooks?per_page=100`])) as { id?: number; config?: { url?: string } }[];
   const existing = hooks.find((h) => h.config?.url === webhook && Number.isInteger(h.id));

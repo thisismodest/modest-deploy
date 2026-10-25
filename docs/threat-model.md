@@ -1,6 +1,6 @@
 # Threat model
 
-What modest-host protects, against whom, and how. In development: each measure is
+What modest-deploy protects, against whom, and how. In development: each measure is
 marked as built (with its test) or planned.
 
 ## What it protects
@@ -53,7 +53,7 @@ marked as built (with its test) or planned.
 
 ## Known limits
 
-- **The server is only as safe as its setup.** modest-host checks the main points,
+- **The server is only as safe as its setup.** modest-deploy checks the main points,
   but doesn't set up the server, and can't see everything (a provider's firewall,
   for one).
 - **Products trust their dependencies.** Install scripts are off, but a compromised
@@ -65,7 +65,7 @@ marked as built (with its test) or planned.
   does, and `check` and the nightly run report it.
 - **A product that's been broken into could listen on another product's port** while
   that one is restarting, and so answer its visitors. systemd can stop this
-  (`SocketBindDeny`, which modest-host sets), but Ubuntu's systemd is built without
+  (`SocketBindDeny`, which modest-deploy sets), but Ubuntu's systemd is built without
   the part it needs, so there it has no effect. Products on Unix sockets, which only
   their own user and Caddy can reach, would close it: see the roadmap.
 - **The deploy service runs as root,** because it makes each release owned by root
@@ -74,5 +74,5 @@ marked as built (with its test) or planned.
 - **A fetch isn't limited in size.** Someone who can push to a product's `main` could
   push a repository large enough to fill the disk as it's fetched, before its size
   can be checked. Deploys stop once less than 1GB is free.
-- **`modest-host deploy` by hand** deploys `main`'s newest commit whether or not its CI
+- **`modest-deploy deploy` by hand** deploys `main`'s newest commit whether or not its CI
   passed. Only GitHub's signed messages require a passing run.

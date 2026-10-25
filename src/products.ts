@@ -50,7 +50,7 @@ export async function listProducts(paths: Layout): Promise<Product[]> {
   for (const name of names) {
     // One product's broken settings are said, and skipped: they never stop the others.
     const product = await readProduct(paths, name).catch((error: Error) => {
-      console.warn(`modest-host: skipped ${name}: ${error.message}`);
+      console.warn(`modest-deploy: skipped ${name}: ${error.message}`);
       return null;
     });
     if (product) found.push(product);
@@ -82,7 +82,7 @@ export function freePort(products: Product[], listening: Set<number> = new Set()
 
 export async function readHost(paths: Layout): Promise<Host> {
   const text = await readFile(paths.host, "utf8").catch(() => null);
-  if (text === null) throw new Error("modest-host isn't installed on this server: run modest-host install");
+  if (text === null) throw new Error("modest-deploy isn't installed on this server: run modest-deploy install");
   const domain = (JSON.parse(text) as Record<string, unknown>).domain;
   if (!isDomain(domain)) throw new Error(`${paths.host}: its domain isn't a domain`);
   return { domain };

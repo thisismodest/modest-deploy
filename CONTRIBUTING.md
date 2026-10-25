@@ -1,6 +1,6 @@
 # Contributing
 
-Thank you for helping. modest-host stays safe by staying small, so the most useful
+Thank you for helping. modest-deploy stays safe by staying small, so the most useful
 contributions often take something away, and every addition is held to the rules
 below.
 

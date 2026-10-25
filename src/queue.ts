@@ -55,7 +55,7 @@ export async function takeOne(paths: Layout): Promise<Request | null> {
     const commit = (await readSmall(taken)).trim();
     await rm(taken, { recursive: true, force: true }).catch(() => {});
     if (isName(file) && isWanted(commit)) return { name: file, commit };
-    console.warn(`modest-host: removed ${JSON.stringify(file.slice(0, 40))} from the deploy requests: it isn't one`);
+    console.warn(`modest-deploy: removed ${JSON.stringify(file.slice(0, 40))} from the deploy requests: it isn't one`);
   }
   return null;
 }

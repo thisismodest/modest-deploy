@@ -1,4 +1,4 @@
-// The one way modest-host runs another program: execFile, with a fixed program and a
+// The one way modest-deploy runs another program: execFile, with a fixed program and a
 // list of arguments, never a shell, so no argument can become a second command.
 // Tests replace it with a recording.
 

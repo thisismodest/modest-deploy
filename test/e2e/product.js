@@ -30,15 +30,15 @@ async function probe(other) {
     server.listen(4199, "127.0.0.1", () => server.close(() => resolve("allowed")));
   });
   return {
-    "read its own webhook secret": tried(() => readFileSync(`/etc/modest-host/secrets/${self}`)),
-    "read its own environment file": tried(() => readFileSync(`/etc/modest-host/env/${self}.env`)),
-    "read its own deploy key": tried(() => readFileSync(`/etc/modest-host/keys/${self}`)),
+    "read its own webhook secret": tried(() => readFileSync(`/etc/modest-deploy/secrets/${self}`)),
+    "read its own environment file": tried(() => readFileSync(`/etc/modest-deploy/env/${self}.env`)),
+    "read its own deploy key": tried(() => readFileSync(`/etc/modest-deploy/keys/${self}`)),
     "read /etc/shadow": tried(() => readFileSync("/etc/shadow")),
-    "change its own code": tried(() => writeFileSync(`/srv/modest-host/${self}/current/server.js`, "x")),
+    "change its own code": tried(() => writeFileSync(`/srv/modest-deploy/${self}/current/server.js`, "x")),
     "write to /etc": tried(() => writeFileSync("/etc/evil", "x")),
-    "read another product's data": tried(() => readFileSync(`/var/lib/modest-host/${other}/app.db`)),
-    "read another product's code": tried(() => readFileSync(`/srv/modest-host/${other}/current/server.js`)),
-    "read the backups": tried(() => readdirSync("/var/backups/modest-host")),
+    "read another product's data": tried(() => readFileSync(`/var/lib/modest-deploy/${other}/app.db`)),
+    "read another product's code": tried(() => readFileSync(`/srv/modest-deploy/${other}/current/server.js`)),
+    "read the backups": tried(() => readdirSync("/var/backups/modest-deploy")),
     "listen on another port": bound,
     "see other users' processes": readdirSync("/proc").filter((p) => /^\d+$/.test(p)).length > 3 ? "allowed" : "refused",
     "write its own data": tried(() => writeFileSync(`${process.env.DATA_DIR}/x`, "x")),

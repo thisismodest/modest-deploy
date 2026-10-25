@@ -18,7 +18,7 @@ const sh = (program: string, args: string[], options: { cwd?: string; allowFail?
 const step = (what: string) => console.log(`\n== ${what}`);
 const ok = (what: string) => console.log(`   ok: ${what}`);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const mh = (...args: string[]) => sh("modest-host", args);
+const mh = (...args: string[]) => sh("modest-deploy", args);
 
 const secrets: Record<string, string> = {};
 const commits: Record<string, string[]> = { shop: [], blog: [] };
@@ -57,8 +57,8 @@ async function webhook(name: string, sha: string, secret = secrets[name] ?? "", 
 async function settled() {
   await sleep(1500);
   for (let i = 0; i < 240; i++) {
-    const waiting = readdirSync("/var/spool/modest-host/requests").length;
-    const state = sh("systemctl", ["is-active", "modest-host-deploy.service"], { allowFail: true }).trim();
+    const waiting = readdirSync("/var/spool/modest-deploy/requests").length;
+    const state = sh("systemctl", ["is-active", "modest-deploy-deploy.service"], { allowFail: true }).trim();
     if (!waiting && state !== "activating") return;
     await sleep(500);
   }
@@ -79,7 +79,7 @@ ok("every check passes");
 
 step("install");
 console.log(mh("install", "--domain", "deploy.example.org"));
-for (const unit of ["modest-host-listener.service", "modest-host-deploy.path", "modest-host-backup.timer"]) {
+for (const unit of ["modest-deploy-listener.service", "modest-deploy-deploy.path", "modest-deploy-backup.timer"]) {
   assert.equal(sh("systemctl", ["is-active", unit]).trim(), "active", unit);
 }
 ok("the listener, the deploy path, and the backup timer are running");
@@ -93,8 +93,8 @@ for (const name of ["shop", "blog"]) {
 }
 assert.equal(added.shop?.webhook, "https://deploy.example.org/deploy/shop");
 const ports = {
-  shop: JSON.parse(readFileSync("/etc/modest-host/products/shop.json", "utf8")).port,
-  blog: JSON.parse(readFileSync("/etc/modest-host/products/blog.json", "utf8")).port,
+  shop: JSON.parse(readFileSync("/etc/modest-deploy/products/shop.json", "utf8")).port,
+  blog: JSON.parse(readFileSync("/etc/modest-deploy/products/blog.json", "utf8")).port,
 };
 ok(`added, on ports ${ports.shop} and ${ports.blog}`);
 
@@ -119,10 +119,10 @@ const v1 = commit("shop", "shop v1");
 assert.equal((await webhook("shop", v1)).status, 202);
 await settled();
 assert.equal(await answer(ports.shop), "(nothing)");
-assert.match(sh("journalctl", ["-u", "modest-host-deploy.service", "--no-pager"]), /didn't have GitHub's host key/);
+assert.match(sh("journalctl", ["-u", "modest-deploy-deploy.service", "--no-pager"]), /didn't have GitHub's host key/);
 ok("nothing deployed: GitHub's real host keys are pinned");
 const hostKey = readFileSync("/etc/ssh/ssh_host_ed25519_key.pub", "utf8").split(" ").slice(0, 2).join(" ");
-writeFileSync("/etc/modest-host/keys/known_hosts", `github.com ${hostKey}\n`);
+writeFileSync("/etc/modest-deploy/keys/known_hosts", `github.com ${hostKey}\n`);
 
 step("a signed message for a passed CI run deploys");
 const response = await webhook("shop", v1);
@@ -167,7 +167,7 @@ ok("the product answers on its domain; the deploy domain only passes /deploy/ on
 
 step("an unsigned or wrongly signed message is refused, and leaves nothing");
 assert.equal((await webhook("shop", v1, "wrong")).status, 401);
-assert.equal(readdirSync("/var/spool/modest-host/requests").length, 0);
+assert.equal(readdirSync("/var/spool/modest-deploy/requests").length, 0);
 ok("refused");
 
 step("each product is sandboxed");
@@ -181,10 +181,10 @@ for (const [what, result] of Object.entries(probe)) {
 ok("it can write its own data, and nothing else it tried (but another port: see the threat model's known limits)");
 
 step("each product's build user reaches only its own key and source");
-for (const path of ["/etc/modest-host/keys/blog", "/srv/modest-host/blog/source.git/HEAD", "/etc/modest-host/secrets/blog"]) {
+for (const path of ["/etc/modest-deploy/keys/blog", "/srv/modest-deploy/blog/source.git/HEAD", "/etc/modest-deploy/secrets/blog"]) {
   assert.match(sh("runuser", ["-u", "mb-shop", "--", "cat", path], { allowFail: true }), /Permission denied/, path);
 }
-assert.match(sh("runuser", ["-u", "mb-shop", "--", "ls", "/etc/modest-host/keys"], { allowFail: true }), /Permission denied/);
+assert.match(sh("runuser", ["-u", "mb-shop", "--", "ls", "/etc/modest-deploy/keys"], { allowFail: true }), /Permission denied/);
 ok("shop's build user can't read blog's key, source, or secret, nor list the keys");
 
 step("a newer version deploys; an old message sent again doesn't roll it back");
@@ -195,7 +195,7 @@ assert.equal(await answer(ports.shop), "shop v2");
 await webhook("shop", v1);
 await settled();
 assert.equal(await answer(ports.shop), "shop v2");
-assert.match(sh("journalctl", ["-u", "modest-host-deploy.service", "--no-pager"]), /older than main's newest/);
+assert.match(sh("journalctl", ["-u", "modest-deploy-deploy.service", "--no-pager"]), /older than main's newest/);
 ok("v2 running, and v1's message again was skipped");
 
 step("a version that doesn't start is switched back");
@@ -203,18 +203,18 @@ const v3 = commit("shop", "broken", 'throw new Error("this version is broken");\
 await webhook("shop", v3);
 await settled();
 assert.equal(await answer(ports.shop), "shop v2");
-assert.match(sh("journalctl", ["-u", "modest-host-deploy.service", "--no-pager"]), /didn't answer, so \w+ is running again/);
+assert.match(sh("journalctl", ["-u", "modest-deploy-deploy.service", "--no-pager"]), /didn't answer, so \w+ is running again/);
 ok("v2 is running again");
 
 step("backup");
 console.log(mh("backup"));
 const night = new Date().toISOString().slice(0, 10);
-const copy = `/var/backups/modest-host/shop/${night}/app.db`;
+const copy = `/var/backups/modest-deploy/shop/${night}/app.db`;
 assert.equal((statSync(copy).mode & 0o777).toString(8), "600");
 assert.equal(statSync(copy).uid, 0);
 const { DatabaseSync } = await import("node:sqlite");
 assert.equal(new DatabaseSync(copy, { readOnly: true }).prepare("select count(*) as n from auth_users").get()?.n, 0);
-assert.equal(statSync("/var/lib/modest-host/shop/app.db").uid, Number(sh("id", ["-u", "mh-shop"]).trim()), "the product's own files stay its own");
+assert.equal(statSync("/var/lib/modest-deploy/shop/app.db").uid, Number(sh("id", ["-u", "md-shop"]).trim()), "the product's own files stay its own");
 ok("a working copy, readable by root only, and the product's files untouched");
 
 step("run again: add gives the same secret and key; install brings every unit up to date");
@@ -222,7 +222,7 @@ const again = JSON.parse(mh("add", "shop", "--domain", "shop.example.org", "--re
 assert.equal(again.secret, secrets.shop);
 assert.equal(again.deployKey, added.shop?.deployKey);
 assert.match(
-  sh("modest-host", ["add", "shop", "--domain", "other.example.org", "--repo", "example/shop"], { allowFail: true }),
+  sh("modest-deploy", ["add", "shop", "--domain", "other.example.org", "--repo", "example/shop"], { allowFail: true }),
   /already a product called shop/,
 );
 console.log(mh("install"));
@@ -232,8 +232,8 @@ ok("the same secret and key; a different domain refused; install again keeps eve
 step("list, and remove");
 console.log(mh("list"));
 console.log(mh("remove", "blog"));
-assert.equal(sh("systemctl", ["is-active", "modest-host-blog.service"], { allowFail: true }).trim(), "inactive");
-assert.equal(readFileSync("/var/lib/modest-host/blog/note.txt", "utf8"), "kept");
+assert.equal(sh("systemctl", ["is-active", "modest-deploy-blog.service"], { allowFail: true }).trim(), "inactive");
+assert.equal(readFileSync("/var/lib/modest-deploy/blog/note.txt", "utf8"), "kept");
 assert.equal((await webhook("blog", commits.blog?.[0] ?? "")).status, 401, "the same answer as a product that never existed");
 ok("removed; its data kept; its webhook answers as if it never existed");
 

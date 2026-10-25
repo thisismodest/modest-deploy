@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// modest-host's commands. On the server, as root: check, install, add, remove, list,
+// modest-deploy's commands. On the server, as root: check, install, add, remove, list,
 // deploy, restart, logs, and backup. On your laptop: launch. And the ones systemd
 // runs: listen (the listener), work (the deploy service), and copy-database (backup).
 
@@ -15,11 +15,11 @@ import { enqueue, takeOne } from "./queue.ts";
 import { must, run } from "./run.ts";
 import { add, backup, copyDatabase, install, list, remove, type Server } from "./server.ts";
 
-const USAGE = `modest-host: deploy small Node products to your own server.
+const USAGE = `modest-deploy: deploy small Node products to your own server.
 
 On the server (with sudo):
   check                                         check the server is set up safely
-  install --domain <deploy-domain>              install modest-host's own parts; again after updating it
+  install --domain <deploy-domain>              install modest-deploy's own parts; again after updating it
   add <name> --domain <domain> --repo <owner/repo> [--json]
                                                 add a product (launch does this for you)
   list                                          the products, and what each is running
@@ -63,7 +63,7 @@ function asRoot(): void {
 }
 
 const product = (name: string | undefined) => {
-  if (!isName(name)) throw new Error("name a product: modest-host list shows them");
+  if (!isName(name)) throw new Error("name a product: modest-deploy list shows them");
   return name;
 };
 
@@ -86,7 +86,7 @@ async function main(argv: string[]): Promise<void> {
       log(`  a deploy key (read-only): ${added.deployKey}`);
       log(`  a webhook: ${added.webhook}, content type application/json, the "Workflow runs" event, with this secret:`);
       log(`  ${added.secret}`);
-      log(`Then point ${added.domain}'s DNS at this server. (modest-host launch does all of this from your laptop.)`);
+      log(`Then point ${added.domain}'s DNS at this server. (modest-deploy launch does all of this from your laptop.)`);
       return;
     }
     case "list":
@@ -98,7 +98,7 @@ async function main(argv: string[]): Promise<void> {
       const name = product(words[0]);
       if (!(await readProduct(layout(), name))) throw new Error(`there's no product called ${name}`);
       await enqueue(layout(), name, "tip");
-      return log(`Asked to deploy ${name}. Follow it with: journalctl -fu modest-host-deploy.service`);
+      return log(`Asked to deploy ${name}. Follow it with: journalctl -fu modest-deploy-deploy.service`);
     }
     case "restart":
       asRoot();
@@ -120,10 +120,10 @@ async function main(argv: string[]): Promise<void> {
     case "backup": {
       // Through systemd, so it never runs twice at once (the nightly one and this).
       asRoot();
-      const ran = await run("systemctl", ["start", "modest-host-backup.service"], { timeout: 6 * 60 * 60_000 });
-      const said = await run("journalctl", ["-u", "modest-host-backup.service", "-n", "20", "--no-pager", "-o", "cat", "--since", "-6h"]);
+      const ran = await run("systemctl", ["start", "modest-deploy-backup.service"], { timeout: 6 * 60 * 60_000 });
+      const said = await run("journalctl", ["-u", "modest-deploy-backup.service", "-n", "20", "--no-pager", "-o", "cat", "--since", "-6h"]);
       log(said.stdout.trimEnd().split("\n").slice(-10).join("\n"));
-      if (ran.code !== 0) throw new Error("some copies weren't made: see journalctl -u modest-host-backup.service");
+      if (ran.code !== 0) throw new Error("some copies weren't made: see journalctl -u modest-deploy-backup.service");
       return;
     }
     case "launch":
@@ -142,7 +142,7 @@ async function main(argv: string[]): Promise<void> {
     // Run by systemd.
     case "listen": {
       const listener = createListener(layout());
-      listener.listen(LISTENER_PORT, "127.0.0.1", () => log(`modest-host: listening on 127.0.0.1:${LISTENER_PORT}`));
+      listener.listen(LISTENER_PORT, "127.0.0.1", () => log(`modest-deploy: listening on 127.0.0.1:${LISTENER_PORT}`));
       return;
     }
     case "work": {
@@ -151,14 +151,14 @@ async function main(argv: string[]): Promise<void> {
       for (let request = await takeOne(paths); request; request = await takeOne(paths)) {
         const found = await readProduct(paths, request.name).catch(() => null);
         if (!found) {
-          console.error(`modest-host: ${request.name}: no such product`);
+          console.error(`modest-deploy: ${request.name}: no such product`);
           continue;
         }
         try {
           const outcome = await deploy({ run, paths, answers: (port) => answersWithin(port), log }, found, request.commit);
-          if ("skipped" in outcome) log(`modest-host: ${request.name}: nothing to do: ${outcome.skipped}`);
+          if ("skipped" in outcome) log(`modest-deploy: ${request.name}: nothing to do: ${outcome.skipped}`);
         } catch (error) {
-          console.error(`modest-host: ${request.name}: not deployed: ${error instanceof Error ? error.message : String(error)}`);
+          console.error(`modest-deploy: ${request.name}: not deployed: ${error instanceof Error ? error.message : String(error)}`);
           process.exitCode = 1;
         }
       }
@@ -168,9 +168,9 @@ async function main(argv: string[]): Promise<void> {
       // Nightly, too: anything listening to the outside that shouldn't be (a product broken into, say) is said.
       const listening = await run("ss", ["-Hltn"]);
       const open = outsidePorts(listening.stdout).filter((local) => !/:(\d+)$/.test(local) || Number(local.split(":").at(-1)) >= 1024);
-      if (open.length) console.warn(`modest-host: listening to the outside, and shouldn't be: ${open.join(", ")}. Run modest-host check.`);
+      if (open.length) console.warn(`modest-deploy: listening to the outside, and shouldn't be: ${open.join(", ")}. Run modest-deploy check.`);
       const { copied, failed } = await backup(server());
-      log(`modest-host: copied ${copied} databases${failed ? `; ${failed} couldn't be copied (above)` : ""}.`);
+      log(`modest-deploy: copied ${copied} databases${failed ? `; ${failed} couldn't be copied (above)` : ""}.`);
       if (failed) process.exitCode = 1;
       return;
     }
@@ -183,6 +183,6 @@ async function main(argv: string[]): Promise<void> {
 }
 
 main(process.argv.slice(2)).catch((error) => {
-  console.error(`modest-host: ${error instanceof Error ? error.message : String(error)}`);
+  console.error(`modest-deploy: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
 });

@@ -1,5 +1,5 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a security vulnerability
-    url: https://github.com/thisismodest/modest-host/security/advisories/new
+    url: https://github.com/thisismodest/modest-deploy/security/advisories/new
     about: Please report vulnerabilities privately, never in a public issue. See SECURITY.md.

@@ -9,4 +9,4 @@ about: A bug that isn't a security problem (for those, see SECURITY.md)
 
 **How to make it happen** (the commands, and what they said)
 
-**Versions:** modest-host, Node, Caddy, and the server's operating system
+**Versions:** modest-deploy, Node, Caddy, and the server's operating system

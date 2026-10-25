@@ -1,6 +1,6 @@
 # Security
 
-modest-host runs code on servers, from messages sent over the internet. A report that
+modest-deploy runs code on servers, from messages sent over the internet. A report that
 shows it can be made to run the wrong thing, or reach what it shouldn't, is the most
 useful contribution there is.
 
@@ -34,9 +34,9 @@ Anything that breaks a promise in [README.md](README.md) or
 
 ## Out of scope
 
-The server's own setup, which modest-host checks but doesn't do (see "Before you
+The server's own setup, which modest-deploy checks but doesn't do (see "Before you
 install" in the README), and the products themselves. Reports of setup mistakes
-`modest-host check` could catch are still welcome, as ordinary issues.
+`modest-deploy check` could catch are still welcome, as ordinary issues.
 
 ## What we do to stay secure
 

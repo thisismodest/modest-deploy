@@ -36,4 +36,4 @@ reviewed.
 4. The release workflow checks the tag matches the version and is on `main`, runs
    every check, publishes with provenance, and makes a GitHub Release with that
    version's notes. A server that runs it from a clone can be kept on a version with
-   `git -C /opt/modest-host checkout v1.2.3`.
+   `git -C /opt/modest-deploy checkout v1.2.3`.
