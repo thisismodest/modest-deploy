@@ -11,7 +11,8 @@ export type Run = (program: string, args: string[], options?: RunOptions) => Pro
 /** Runs a program, waiting for it; never throws for a non-zero exit (the caller decides). */
 export const run: Run = (program, args, options = {}) =>
   new Promise((resolve) => {
-    const env = options.env ?? { PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", LANG: "C.UTF-8" };
+    const system = { PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", LANG: "C.UTF-8" };
+    const env = options.env ?? system;
     // As another user: runuser (util-linux, on every Ubuntu) drops to that user, and env
     // starts the program with exactly this environment, and nothing of root's.
     const [file, list] = options.as
@@ -22,7 +23,8 @@ export const run: Run = (program, args, options = {}) =>
       list,
       {
         cwd: options.cwd,
-        env,
+        // runuser itself is found on the system's PATH; the program it starts gets `env`.
+        env: options.as ? system : env,
         timeout: options.timeout ?? 10 * 60_000,
         maxBuffer: 16 * 1024 * 1024,
         encoding: "utf8",
@@ -38,6 +40,7 @@ export const run: Run = (program, args, options = {}) =>
 /** Runs a program, and throws, saying what failed, if it doesn't succeed. */
 export async function must(runner: Run, program: string, args: string[], options?: RunOptions): Promise<string> {
   const ran = await runner(program, args, options);
-  if (ran.code !== 0) throw new Error(`${program} ${args[0] ?? ""} failed: ${(ran.stderr || ran.stdout).trim().split("\n").slice(-3).join(" ")}`);
+  if (ran.code !== 0)
+    throw new Error(`${program} ${args[0] ?? ""} failed: ${(ran.stderr || ran.stdout).trim().split("\n").filter(Boolean).slice(-12).join(" ")}`);
   return ran.stdout;
 }

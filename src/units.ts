@@ -109,6 +109,8 @@ export function deployService(node: string, cli: string): string {
   return `# Written by modest-host: changes here are replaced.
 [Unit]
 Description=modest-host: deploy what's been asked for
+# Started each time a request arrives: however many arrive at once, it's never refused.
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot

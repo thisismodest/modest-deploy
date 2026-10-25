@@ -3,7 +3,8 @@
 // written whole; nothing a product keeps is deleted as a side effect.
 
 import { randomBytes } from "node:crypto";
-import { chmod, chown, mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { chmod, chown, mkdir, open, readdir, readFile, rm, stat } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { checkServer, report } from "./check.ts";
 import { running } from "./deploy.ts";
@@ -197,7 +198,9 @@ export async function backup(server: Server, today = new Date().toISOString().sl
   let copied = 0;
   for (const product of await listProducts(paths)) {
     const user = productUser(product.name);
-    const work = join("/var/backups/modest-host", ".work", product.name);
+    // Each product's user can reach only its own folder here (the parent can be passed through, not listed).
+    await folder(server, paths.copying, 0o711);
+    const work = paths.copyingFor(product.name);
     await rm(work, { recursive: true, force: true });
     await folder(server, work, 0o700, user);
     const night = join(paths.backups(product.name), today);
@@ -210,16 +213,45 @@ export async function backup(server: Server, today = new Date().toISOString().sl
       }
       const to = join(night, relative(paths.data(product.name), db));
       await mkdir(join(to, ".."), { recursive: true, mode: 0o700 });
-      await rename(copy, to);
-      await chown(to, 0, 0);
-      await chmod(to, 0o600);
-      copied++;
+      try {
+        await takeCopy(copy, to, await uid(server, user));
+        copied++;
+      } catch (error) {
+        console.error(
+          `modest-host: ${product.name}: ${relative(paths.data(product.name), db)}'s copy wasn't taken: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
     }
     await rm(work, { recursive: true, force: true });
     const nights = (await readdir(paths.backups(product.name)).catch(() => [] as string[])).filter((n) => /^\d{4}-\d{2}-\d{2}$/.test(n)).sort();
     for (const old of nights.slice(0, Math.max(0, nights.length - NIGHTS))) await rm(join(paths.backups(product.name), old), { recursive: true, force: true });
   }
   return copied;
+}
+
+/**
+ * Root takes the product's copy by reading it, never by moving it or changing its
+ * owner: the folder is the product's, so what's there could be a link to anything.
+ * Only a plain file the product owns is read, into a new file only root can read.
+ */
+export async function takeCopy(from: string, to: string, owner: number): Promise<void> {
+  const source = await open(from, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const found = await source.stat();
+    if (!found.isFile() || found.uid !== owner || found.nlink !== 1) throw new Error("it isn't a plain file of the product's own");
+    await rm(to, { force: true });
+    const target = await open(to, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+    try {
+      const chunk = Buffer.alloc(1024 * 1024);
+      for (let read = await source.read(chunk, 0, chunk.length); read.bytesRead; read = await source.read(chunk, 0, chunk.length)) {
+        await target.write(chunk, 0, read.bytesRead);
+      }
+    } finally {
+      await target.close();
+    }
+  } finally {
+    await source.close();
+  }
 }
 
 /** Run as the product's user, by backup: one database copied with SQLite's online backup. */

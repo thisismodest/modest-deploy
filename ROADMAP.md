@@ -24,6 +24,10 @@ it brings. Nothing here is a promise of a date.
 
 ## Later, maybe
 
+- **Products on Unix sockets,** reachable only by their own user and Caddy, so a
+  product that's been broken into can't take another's port while it restarts
+  (Ubuntu's systemd can't stop that otherwise).
+
 - **Moving a product to a server of its own,** with its data.
 - **Other Linux distributions** with systemd, once Ubuntu is solid.
 

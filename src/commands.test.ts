@@ -164,3 +164,24 @@ test("launch refuses an answer from the server that isn't what add gives", async
     /wasn't what/,
   );
 });
+
+test("a backup copy is taken only if it's a plain file of the product's own: a link put in its place is refused, and what it points to untouched", async () => {
+  const { mkdtemp, writeFile, symlink, link, readFile, stat } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { takeCopy } = await import("./server.ts");
+  const dir = await mkdtemp(join(tmpdir(), "modest-host-copy-"));
+  const me = process.getuid?.() ?? 0;
+  const precious = join(dir, "precious");
+  await writeFile(precious, "not the product's", { mode: 0o644 });
+  await symlink(precious, join(dir, "linked.db"));
+  await assert.rejects(takeCopy(join(dir, "linked.db"), join(dir, "out1"), me));
+  await link(precious, join(dir, "hard.db"));
+  await assert.rejects(takeCopy(join(dir, "hard.db"), join(dir, "out2"), me), /plain file/);
+  await writeFile(join(dir, "copy.db"), "a database");
+  await assert.rejects(takeCopy(join(dir, "copy.db"), join(dir, "out3"), me + 1), /plain file/);
+  await takeCopy(join(dir, "copy.db"), join(dir, "out4"), me);
+  assert.equal(await readFile(join(dir, "out4"), "utf8"), "a database");
+  assert.equal((await stat(join(dir, "out4"))).mode & 0o777, 0o600);
+  assert.equal((await stat(precious)).mode & 0o777, 0o644);
+});

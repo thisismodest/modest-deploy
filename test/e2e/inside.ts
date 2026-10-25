@@ -1,0 +1,226 @@
+// The end-to-end test, run as root inside a fresh Ubuntu server with systemd (see
+// run.sh). It does what a person would: check, install, add two products, and deploy
+// them through signed webhook messages; then checks every promise on the real system.
+
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { createHmac } from "node:crypto";
+import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+
+const sh = (program: string, args: string[], options: { cwd?: string; allowFail?: boolean } = {}) => {
+  try {
+    return execFileSync(program, args, { cwd: options.cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  } catch (error) {
+    if (options.allowFail) return `${(error as { stdout?: string }).stdout ?? ""}${(error as { stderr?: string }).stderr ?? ""}`;
+    throw error;
+  }
+};
+const step = (what: string) => console.log(`\n== ${what}`);
+const ok = (what: string) => console.log(`   ok: ${what}`);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const mh = (...args: string[]) => sh("modest-host", args);
+
+const secrets: Record<string, string> = {};
+const commits: Record<string, string[]> = { shop: [], blog: [] };
+
+/** Commits a version of a product to the stand-in GitHub, returning its commit. */
+function commit(name: string, version: string, server = readFileSync("/e2e/product.js", "utf8").replace("__VERSION__", version)): string {
+  const work = `/root/work/${name}`;
+  writeFileSync(`${work}/server.js`, server);
+  sh("git", ["add", "-A"], { cwd: work });
+  sh("git", ["commit", "-q", "-m", version], { cwd: work });
+  sh("git", ["push", "-q", "origin", "main"], { cwd: work });
+  const sha = sh("git", ["rev-parse", "HEAD"], { cwd: work }).trim();
+  commits[name]?.push(sha);
+  return sha;
+}
+
+/** A webhook message as GitHub sends it when CI passes, signed with `secret`. */
+async function webhook(name: string, sha: string, secret = secrets[name] ?? "", event = "workflow_run") {
+  const body = JSON.stringify({
+    action: "completed",
+    repository: { full_name: `example/${name}` },
+    workflow_run: {
+      path: ".github/workflows/ci.yml",
+      event: "push",
+      head_branch: "main",
+      conclusion: "success",
+      head_sha: sha,
+      head_repository: { full_name: `example/${name}` },
+    },
+  });
+  const signature = `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;
+  return fetch(`http://127.0.0.1:9327/deploy/${name}`, { method: "POST", body, headers: { "x-github-event": event, "x-hub-signature-256": signature } });
+}
+
+/** Waits until no deploy is waiting or running. */
+async function settled() {
+  await sleep(1500);
+  for (let i = 0; i < 240; i++) {
+    const waiting = readdirSync("/var/spool/modest-host/requests").length;
+    const state = sh("systemctl", ["is-active", "modest-host-deploy.service"], { allowFail: true }).trim();
+    if (!waiting && state !== "activating") return;
+    await sleep(500);
+  }
+  throw new Error("the deploy never finished");
+}
+
+const answer = async (port: number, path = "/") => {
+  try {
+    return await (await fetch(`http://127.0.0.1:${port}${path}`)).text();
+  } catch {
+    return "(nothing)";
+  }
+};
+
+step("check, on a server set up as the README says");
+sh("npm", ["install", "-g", "--ignore-scripts", "--silent", "/e2e/modest-host.tgz"]);
+console.log(mh("check"));
+ok("every check passes");
+
+step("install");
+console.log(mh("install", "--domain", "deploy.example.org"));
+for (const unit of ["modest-host-listener.service", "modest-host-deploy.path", "modest-host-backup.timer"]) {
+  assert.equal(sh("systemctl", ["is-active", unit]).trim(), "active", unit);
+}
+ok("the listener, the deploy path, and the backup timer are running");
+
+step("add two products");
+const added: Record<string, { port?: number; deployKey: string; secret: string; webhook: string }> = {};
+for (const name of ["shop", "blog"]) {
+  const out = mh("add", name, "--domain", `${name}.example.org`, "--repo", `example/${name}`, "--json").trim().split("\n").at(-1) ?? "";
+  added[name] = JSON.parse(out);
+  secrets[name] = added[name]?.secret ?? "";
+}
+assert.equal(added.shop?.webhook, "https://deploy.example.org/deploy/shop");
+const ports = {
+  shop: JSON.parse(readFileSync("/etc/modest-host/products/shop.json", "utf8")).port,
+  blog: JSON.parse(readFileSync("/etc/modest-host/products/blog.json", "utf8")).port,
+};
+ok(`added, on ports ${ports.shop} and ${ports.blog}`);
+
+step("the stand-in GitHub");
+sh("sh", ["-c", "mkdir -p /home/git/.ssh /home/git/example && chown -R git:git /home/git"]);
+writeFileSync("/home/git/.ssh/authorized_keys", `${added.shop?.deployKey}\n${added.blog?.deployKey}\n`);
+sh("chown", ["git:git", "/home/git/.ssh/authorized_keys"]);
+sh("git", ["config", "--global", "--add", "safe.directory", "*"]);
+for (const name of ["shop", "blog"]) {
+  sh("runuser", ["-u", "git", "--", "git", "init", "-q", "--bare", "-b", "main", `/home/git/example/${name}.git`]);
+  sh("git", ["clone", "-q", `/home/git/example/${name}.git`, `/root/work/${name}`]);
+  sh("git", ["config", "user.email", "e2e@example.org"], { cwd: `/root/work/${name}` });
+  sh("git", ["config", "user.name", "E2E"], { cwd: `/root/work/${name}` });
+  sh("git", ["checkout", "-q", "-b", "main"], { cwd: `/root/work/${name}` });
+  writeFileSync(`/root/work/${name}/package.json`, JSON.stringify({ name, private: true, type: "module", dependencies: { "modest-auth": "0.3.0" } }));
+  sh("npm", ["install", "--package-lock-only", "--ignore-scripts", "--silent"], { cwd: `/root/work/${name}` });
+}
+ok("two repositories, reachable as git@github.com:example/<name>.git");
+
+step("a stand-in GitHub that isn't GitHub is refused: its host key isn't GitHub's");
+const v1 = commit("shop", "shop v1");
+assert.equal((await webhook("shop", v1)).status, 202);
+await settled();
+assert.equal(await answer(ports.shop), "(nothing)");
+assert.match(sh("journalctl", ["-u", "modest-host-deploy.service", "--no-pager"]), /didn't have GitHub's host key/);
+ok("nothing deployed: GitHub's real host keys are pinned");
+const hostKey = readFileSync("/etc/ssh/ssh_host_ed25519_key.pub", "utf8").split(" ").slice(0, 2).join(" ");
+writeFileSync("/etc/modest-host/keys/known_hosts", `github.com ${hostKey}\n`);
+
+step("a signed message for a passed CI run deploys");
+const response = await webhook("shop", v1);
+assert.equal(response.status, 202);
+assert.match(await response.text(), /Deploying/);
+await settled();
+assert.equal(await answer(ports.shop), "shop v1");
+ok("shop v1 is running, with modest-auth installed from npm");
+await webhook("blog", commit("blog", "blog v1"));
+await settled();
+assert.equal(await answer(ports.blog), "blog v1");
+ok("blog v1 is running");
+
+step("through Caddy, on HTTPS");
+const viaCaddy = sh("curl", ["-sk", "--resolve", "shop.example.org:443:127.0.0.1", "https://shop.example.org/"]);
+assert.equal(viaCaddy, "shop v1");
+const deployDomain = sh("curl", [
+  "-sk",
+  "-o",
+  "/dev/null",
+  "-w",
+  "%{http_code}",
+  "--resolve",
+  "deploy.example.org:443:127.0.0.1",
+  "https://deploy.example.org/anything",
+]);
+assert.equal(deployDomain, "404");
+const viaDeploy = sh("curl", [
+  "-sk",
+  "-o",
+  "/dev/null",
+  "-w",
+  "%{http_code}",
+  "-X",
+  "POST",
+  "--resolve",
+  "deploy.example.org:443:127.0.0.1",
+  "https://deploy.example.org/deploy/shop",
+]);
+assert.equal(viaDeploy, "401");
+ok("the product answers on its domain; the deploy domain only passes /deploy/ on, and refuses an unsigned message");
+
+step("an unsigned or wrongly signed message is refused, and leaves nothing");
+assert.equal((await webhook("shop", v1, "wrong")).status, 401);
+assert.equal(readdirSync("/var/spool/modest-host/requests").length, 0);
+ok("refused");
+
+step("each product is sandboxed");
+const probe = JSON.parse(await answer(ports.shop, "/probe?other=blog")) as Record<string, string>;
+console.log(probe);
+for (const [what, result] of Object.entries(probe)) {
+  if (what === "write its own data") assert.equal(result, "allowed", what);
+  // A known limit: Ubuntu's systemd is built without the BPF framework, so SocketBindDeny has no effect there.
+  else if (what !== "listen on another port") assert.notEqual(result, "allowed", what);
+}
+ok("it can write its own data, and nothing else it tried (but another port: see the threat model's known limits)");
+
+step("a newer version deploys; an old message sent again doesn't roll it back");
+const v2 = commit("shop", "shop v2");
+await webhook("shop", v2);
+await settled();
+assert.equal(await answer(ports.shop), "shop v2");
+await webhook("shop", v1);
+await settled();
+assert.equal(await answer(ports.shop), "shop v2");
+assert.match(sh("journalctl", ["-u", "modest-host-deploy.service", "--no-pager"]), /older than main's newest/);
+ok("v2 running, and v1's message again was skipped");
+
+step("a version that doesn't start is switched back");
+const v3 = commit("shop", "broken", 'throw new Error("this version is broken");\n');
+await webhook("shop", v3);
+await settled();
+assert.equal(await answer(ports.shop), "shop v2");
+assert.match(sh("journalctl", ["-u", "modest-host-deploy.service", "--no-pager"]), /didn't answer, so \w+ is running again/);
+ok("v2 is running again");
+
+step("backup");
+console.log(mh("backup"));
+const night = new Date().toISOString().slice(0, 10);
+const copy = `/var/backups/modest-host/shop/${night}/app.db`;
+assert.equal((statSync(copy).mode & 0o777).toString(8), "600");
+assert.equal(statSync(copy).uid, 0);
+const { DatabaseSync } = await import("node:sqlite");
+assert.equal(new DatabaseSync(copy, { readOnly: true }).prepare("select count(*) as n from auth_users").get()?.n, 0);
+assert.equal(statSync("/var/lib/modest-host/shop/app.db").uid, Number(sh("id", ["-u", "mh-shop"]).trim()), "the product's own files stay its own");
+ok("a working copy, readable by root only, and the product's files untouched");
+
+step("list, and remove");
+console.log(mh("list"));
+console.log(mh("remove", "blog"));
+assert.equal(sh("systemctl", ["is-active", "modest-host-blog.service"], { allowFail: true }).trim(), "inactive");
+assert.equal(readFileSync("/var/lib/modest-host/blog/note.txt", "utf8"), "kept");
+assert.equal((await webhook("blog", commits.blog?.[0] ?? "")).status, 404);
+ok("removed; its data kept; its webhook gone");
+
+step("check, again, with everything running");
+console.log(mh("check"));
+ok("still passes: nothing listens to the outside but SSH, HTTP, and HTTPS");
+
+console.log("\nEnd to end: every step passed.");

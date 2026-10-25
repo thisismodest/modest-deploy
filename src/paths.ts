@@ -41,6 +41,9 @@ export function layout(root = "") {
     /** Each product's data (systemd's StateDirectory), and its nightly copies. */
     data: (name: string) => at("var/lib/modest-host", name),
     backups: (name: string) => at("var/backups/modest-host", name),
+    /** Where each product's user makes its copies, before root moves them into backups. */
+    copying: at("var/lib/modest-host-copying"),
+    copyingFor: (name: string) => at("var/lib/modest-host-copying", name),
     /** Deploy requests: written by the listener, taken by the deploy service. */
     writing: at("var/spool/modest-host/writing"),
     requests: at("var/spool/modest-host/requests"),
