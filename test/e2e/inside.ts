@@ -74,7 +74,6 @@ const answer = async (port: number, path = "/") => {
 };
 
 step("check, on a server set up as the README says");
-sh("npm", ["install", "-g", "--ignore-scripts", "--silent", "/e2e/modest-host.tgz"]);
 console.log(mh("check"));
 ok("every check passes");
 

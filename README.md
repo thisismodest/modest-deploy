@@ -90,10 +90,25 @@ Ubuntu server:
 - automatic security updates on (`unattended-upgrades`);
 - Node 24 or later, and Caddy, from their own package repositories.
 
+## Installing
+
+On the server, from this repository: Node runs it as it is, with nothing to build or
+install.
+
+```sh
+sudo git clone https://github.com/thisismodest/modest-host.git /opt/modest-host
+sudo ln -s /opt/modest-host/src/cli.ts /usr/local/bin/modest-host
+sudo modest-host check
+sudo modest-host install --domain deploy.example.org
+```
+
+Then point the deploy domain's DNS at the server: GitHub's messages arrive there. For
+`launch`, clone it on your laptop too, and link it the same way.
+
 ## Updating modest-host
 
 ```sh
-sudo npm install -g modest-host@latest
+sudo git -C /opt/modest-host pull
 sudo modest-host install
 ```
 

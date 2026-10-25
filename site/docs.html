@@ -84,9 +84,15 @@
           <h2 id="install">Install, once per server</h2>
           <div class="window terminal">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
-            <pre><code><span class="c">$</span> sudo modest-host check
+            <pre><code><span class="c">$</span> sudo git clone https://github.com/thisismodest/modest-host.git /opt/modest-host
+<span class="c">$</span> sudo ln -s /opt/modest-host/src/cli.ts /usr/local/bin/modest-host
+<span class="c">$</span> sudo modest-host check
 <span class="c">$</span> sudo modest-host install --domain deploy.example.org</code></pre>
           </div>
+          <p>
+            Node runs it from the repository as it is, with nothing to build or install. For <code>launch</code>,
+            clone it on your laptop too, and link it the same way.
+          </p>
           <p>
             <code>check</code> lists what it relies on, each marked <code>ok</code> or with what to fix.
             <code>install</code> runs it first, and won't go on until everything passes (add <code>--anyway</code> if
@@ -168,7 +174,7 @@
           <h2 id="update">Updating</h2>
           <div class="window terminal">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
-            <pre><code><span class="c">$</span> sudo npm install -g modest-host@latest
+            <pre><code><span class="c">$</span> sudo git -C /opt/modest-host pull
 <span class="c">$</span> sudo modest-host install</code></pre>
           </div>
           <p>Running <code>install</code> again rewrites every unit it made, the products' included, so they use the new version, and restarts them.</p>

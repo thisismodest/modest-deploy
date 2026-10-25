@@ -14,7 +14,9 @@ reviewed.
 - **Actions:** workflow permissions read-only by default.
 - **Pages** from GitHub Actions, for the site in `site/` (published by `pages.yml`).
 
-## A release (once it's ready to publish)
+## A release
 
-As modest-auth: update CHANGELOG.md, set the version, tag the commit on `main`, and
-let a release workflow publish to npm with provenance, using trusted publishing.
+modest-host isn't published to npm: servers run it from a clone of this repository.
+A release is a version tag on `main` (only maintainers can make one, by the tag
+ruleset), with that version's section of CHANGELOG.md, so a server can be kept on a
+known version with `git -C /opt/modest-host checkout v1.2.3`.

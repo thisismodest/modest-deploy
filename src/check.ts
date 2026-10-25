@@ -135,7 +135,7 @@ export async function checkServer(run: Run, read = (path: string) => readFile(pa
     add(
       readable.code === 0,
       "Node and modest-host readable by its services",
-      `install Node system-wide (not with nvm in a home folder), and modest-host with npm install -g under umask 022: ${process.execPath}, ${cli}`,
+      `install Node system-wide (not with nvm in a home folder), and clone modest-host somewhere everyone can read, such as /opt/modest-host: ${process.execPath}, ${cli}`,
     );
   }
   return findings;
