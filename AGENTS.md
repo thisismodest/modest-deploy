@@ -25,10 +25,22 @@ docs/threat-model.md for how.
 
 | What | Where |
 | --- | --- |
+| The commands | `src/cli.ts` |
 | Checking GitHub's signed webhook messages | `src/webhook.ts` |
 | The deploy listener: an HTTP server for those messages | `src/listener.ts` |
+| Deploy requests, from the listener to the deploy service | `src/queue.ts` |
+| Deploying: fetch, build, switch, check, go back | `src/deploy.ts` |
+| install, add, remove, list, and backup | `src/server.ts` |
+| The server's checks | `src/check.ts` |
+| launch, from a laptop | `src/launch.ts` |
+| The systemd units and Caddy sites it writes | `src/units.ts` |
+| Each product's settings | `src/products.ts` |
+| Where everything lives, and the users | `src/paths.ts` |
+| Running programs (execFile, never a shell) | `src/run.ts` |
 | Names, domains, repositories, and commits: the patterns they must match | `src/names.ts` |
-| Tests, beside what they test | `src/*.test.ts` |
+| Tests, beside what they test; shared helpers | `src/*.test.ts`, `test/helpers.ts` |
+| The end-to-end test, on Ubuntu with systemd in Docker | `test/e2e/` (`sh test/e2e/run.sh`) |
+| The website (plain HTML on modest-ui), published by `pages.yml` | `site/` |
 | What it protects, and how | `docs/threat-model.md` |
 | What's being built, in order | `ROADMAP.md` |
 | CI: checks, the no-dependency, import, and nothing-private rules; CodeQL, Scorecard | `.github/workflows/` |
@@ -43,6 +55,7 @@ npm run build       # dist/ for publishing
 npm run rules       # no dependencies, only node: imports, no hidden characters, nothing private
 npx @biomejs/biome check .  # lint and format: keep it clean
 npm run check       # all four
+sh test/e2e/run.sh  # end to end, on Ubuntu with systemd (needs Docker)
 ```
 
 ## Style

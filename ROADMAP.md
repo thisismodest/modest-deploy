@@ -5,15 +5,20 @@ it brings. Nothing here is a promise of a date.
 
 ## Now: the core (0.x)
 
-- [ ] Checking GitHub's signed webhook messages, and which ones to act on
-- [ ] The deploy listener, which runs nothing it's sent
-- [ ] Deploying: fetch, check the commit is the tip of `main`, install, start, check,
+- [x] Checking GitHub's signed webhook messages, and which ones to act on
+- [x] The deploy listener, which runs nothing it's sent
+- [x] Deploying: fetch, check the commit is the tip of `main`, install, start, check,
       and go back if it fails
-- [ ] Each product sandboxed by systemd, with Caddy in front
-- [ ] `check`, `install`, `add`, `launch`, `deploy`, `backup`, `list`, and `remove`
-- [ ] Tested end to end on Ubuntu with systemd
-- [ ] Internal adversarial review, and its findings fixed. Not independent.
-- [ ] A site
+- [x] Each product sandboxed by systemd, with its own users, and Caddy in front
+- [x] `check`, `install`, `add`, `launch`, `deploy`, `restart`, `logs`, `backup`,
+      `list`, and `remove`
+- [x] Tested end to end on Ubuntu 24.04 with systemd, in a container
+- [x] Internal adversarial review: rounds by AI reviewers each given one angle (the
+      webhook and listener, escaping a product, injection and launch, operator
+      mistakes, a lead auditor, and verification of each round's fixes), and their
+      findings fixed. Not independent.
+- [x] A site
+- [ ] Tested on a real droplet, end to end, with GitHub itself
 
 ## Before 1.0
 
