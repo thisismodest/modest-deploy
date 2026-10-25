@@ -1,0 +1,34 @@
+# The end-to-end test: modest-host installed on a fresh Ubuntu server with systemd (in
+# Docker), with two products launched and deployed through signed webhook messages,
+# and every promise checked on the real system. See test/e2e/. Actions pinned to
+# exact commits, as in ci.yml.
+
+name: End to end
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: sh test/e2e/run.sh
