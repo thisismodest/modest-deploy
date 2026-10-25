@@ -11,14 +11,18 @@ export type Run = (program: string, args: string[], options?: RunOptions) => Pro
 /** Runs a program, waiting for it; never throws for a non-zero exit (the caller decides). */
 export const run: Run = (program, args, options = {}) =>
   new Promise((resolve) => {
-    // As another user: runuser (util-linux, on every Ubuntu) drops to that user before anything runs.
-    const [file, list] = options.as ? ["runuser", ["-u", options.as, "--", program, ...args]] : [program, args];
+    const env = options.env ?? { PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", LANG: "C.UTF-8" };
+    // As another user: runuser (util-linux, on every Ubuntu) drops to that user, and env
+    // starts the program with exactly this environment, and nothing of root's.
+    const [file, list] = options.as
+      ? ["runuser", ["-u", options.as, "--", "/usr/bin/env", "-i", ...Object.entries(env).map(([k, v]) => `${k}=${v}`), program, ...args]]
+      : [program, args];
     const child = execFile(
       file,
       list,
       {
         cwd: options.cwd,
-        env: options.env ?? { PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin", LANG: "C.UTF-8" },
+        env,
         timeout: options.timeout ?? 10 * 60_000,
         maxBuffer: 16 * 1024 * 1024,
         encoding: "utf8",
