@@ -38,13 +38,13 @@ function readBody(req: IncomingMessage): Promise<Buffer | null> {
   });
 }
 
-async function handle(paths: Layout, req: IncomingMessage, res: ServerResponse): Promise<void> {
+/** How many deliveries' ids are remembered, so one sent again is noticed. */
+const REMEMBERED = 1000;
+
+async function handle(paths: Layout, seen: Set<string>, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const name = /^\/deploy\/([^/?#]+)$/.exec(req.url ?? "")?.[1];
   if (!name || !isName(name)) return answer(res, 404, "Not found");
   if (req.method !== "POST") return answer(res, 405, "POST only");
-  const product = await readProduct(paths, name);
-  const secret = product ? (await readFile(paths.secret(name), "utf8").catch(() => "")).trim() : "";
-  if (!product || !secret) return answer(res, 404, "Not found");
   if (Number(req.headers["content-length"] ?? 0) > MOST_BYTES) return answer(res, 413, "Too large");
   const body = await readBody(req);
   if (!body) {
@@ -52,16 +52,26 @@ async function handle(paths: Layout, req: IncomingMessage, res: ServerResponse):
     res.setHeader("connection", "close");
     return answer(res, 413, "Too large");
   }
+  // A product that doesn't exist gets the same answer as a wrong signature, so the answer doesn't say which exist.
+  const product = await readProduct(paths, name).catch(() => null);
+  const secret = product ? (await readFile(paths.secret(name), "utf8").catch(() => "")).trim() : "";
   const signature = req.headers["x-hub-signature-256"];
-  if (!signatureValid(body, typeof signature === "string" ? signature : undefined, secret)) {
-    console.warn(`modest-host: refused a message for ${name} without a valid signature`);
+  if (!product || !signatureValid(body, typeof signature === "string" ? signature : undefined, secret)) {
     return answer(res, 401, "Not signed with this product's secret");
   }
+  // Each delivery is acted on once: one sent again (by anyone who kept a copy) is ignored.
+  const delivery = req.headers["x-github-delivery"];
+  const id = typeof delivery === "string" && /^[A-Za-z0-9-]{1,64}$/.test(delivery) ? `${name}:${delivery}` : null;
+  if (id && seen.has(id)) return answer(res, 202, "Ignored: already received");
   let payload: unknown;
   try {
     payload = JSON.parse(body.toString("utf8"));
   } catch {
     return answer(res, 400, "Not JSON");
+  }
+  if (id) {
+    seen.add(id);
+    if (seen.size > REMEMBERED) seen.delete(seen.values().next().value ?? "");
   }
   const event = req.headers["x-github-event"];
   const decision = decide(typeof event === "string" ? event : undefined, payload, product);
@@ -72,8 +82,9 @@ async function handle(paths: Layout, req: IncomingMessage, res: ServerResponse):
 }
 
 export function createListener(paths: Layout): Server {
+  const seen = new Set<string>();
   const server = createServer((req, res) => {
-    handle(paths, req, res).catch((error) => {
+    handle(paths, seen, req, res).catch((error) => {
       console.error(`modest-host: the listener failed: ${error instanceof Error ? error.message : String(error)}`);
       if (!res.headersSent) answer(res, 500, "Failed");
     });

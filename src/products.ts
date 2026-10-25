@@ -28,10 +28,17 @@ function checked(value: unknown, name: string): Product {
 export async function readProduct(paths: Layout, name: string): Promise<Product | null> {
   if (!isName(name)) return null;
   const text = await readFile(paths.product(name), "utf8").catch(() => null);
-  return text === null ? null : checked(JSON.parse(text), name);
+  if (text === null) return null;
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new Error(`${paths.product(name)} isn't valid JSON: fix it, or remove the product`);
+  }
+  return checked(value, name);
 }
 
-/** Every product, by name. One with broken settings is reported, not hidden. */
+/** Every product, by name. One with broken settings is said in the log, and skipped. */
 export async function listProducts(paths: Layout): Promise<Product[]> {
   const files = await readdir(paths.products).catch(() => [] as string[]);
   const names = files
@@ -41,7 +48,11 @@ export async function listProducts(paths: Layout): Promise<Product[]> {
     .sort();
   const found: Product[] = [];
   for (const name of names) {
-    const product = await readProduct(paths, name);
+    // One product's broken settings are said, and skipped: they never stop the others.
+    const product = await readProduct(paths, name).catch((error: Error) => {
+      console.warn(`modest-host: skipped ${name}: ${error.message}`);
+      return null;
+    });
     if (product) found.push(product);
   }
   return found;
@@ -61,9 +72,9 @@ export async function saveProduct(paths: Layout, product: Product): Promise<void
   await writeWhole(paths.product(name), `${JSON.stringify({ name, domain, repo, port }, null, 2)}\n`);
 }
 
-/** The first port no product has. */
-export function freePort(products: Product[]): number {
-  const taken = new Set(products.map((p) => p.port));
+/** The first port no product has, and nothing else is listening on. */
+export function freePort(products: Product[], listening: Set<number> = new Set()): number {
+  const taken = new Set([...products.map((p) => p.port), ...listening]);
   let port = FIRST_PORT;
   while (taken.has(port)) port++;
   return port;

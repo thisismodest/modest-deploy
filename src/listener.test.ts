@@ -67,15 +67,36 @@ test("a signed message that shouldn't deploy (a failed run, another branch) leav
     assert.deepEqual(await waiting(paths), []);
   }));
 
-test("a product that doesn't exist, or has no secret, is not found, whatever the message", () =>
+test("a product that doesn't exist, or has no secret, or broken settings, gets the same answer as a wrong signature, so the answers don't say which exist", () =>
   onServer(async (paths) => {
     await withProduct(paths);
     await writeFile(paths.secret("shop"), "  \n");
+    await writeFile(paths.product("broken"), "{ not json");
     await listening(paths, async (url) => {
-      assert.equal((await send(url, JSON.stringify(passed()))).status, 404, "an empty secret is no secret");
-      for (const path of ["/deploy/other", "/deploy/..%2Fshop", "/deploy/shop/x", "/deploy/", "/", "/deploy/shop?x=1"]) {
+      const body = JSON.stringify(passed());
+      assert.equal((await send(url, body)).status, 401, "an empty secret is no secret");
+      for (const name of ["other", "broken"]) {
+        const res = await fetch(`${url}/deploy/${name}`, { method: "POST", body, headers: { "x-hub-signature-256": sign(body) } });
+        assert.equal(res.status, 401, name);
+        assert.match(await res.text(), /Not signed with this product's secret/);
+      }
+      for (const path of ["/deploy/..%2Fshop", "/deploy/shop/x", "/deploy/", "/", "/deploy/shop?x=1"]) {
         assert.equal((await fetch(url + path, { method: "POST", body: "{}" })).status, 404, path);
       }
+    });
+    assert.deepEqual(await waiting(paths), []);
+  }));
+
+test("a delivery is acted on once: the same one sent again is ignored", () =>
+  onServer(async (paths) => {
+    await withProduct(paths);
+    await listening(paths, async (url) => {
+      const body = JSON.stringify(passed());
+      const first = await send(url, body, { "x-github-delivery": "72d3162e-cc78-11e3-81ab-4c9367dc0958" });
+      assert.match(await first.text(), /Deploying/);
+      await takeAll(paths);
+      const again = await send(url, body, { "x-github-delivery": "72d3162e-cc78-11e3-81ab-4c9367dc0958" });
+      assert.match(await again.text(), /already received/);
     });
     assert.deepEqual(await waiting(paths), []);
   }));

@@ -11,7 +11,10 @@ export const isDomain = (value: unknown): value is string =>
 
 /** A GitHub repository, as owner/name. */
 export const isRepo = (value: unknown): value is string =>
-  typeof value === "string" && /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9._-]{1,100}$/.test(value) && !/\/\.{1,2}$/.test(value) && !value.endsWith(".git");
+  typeof value === "string" &&
+  /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9_][A-Za-z0-9._-]{0,99}$/.test(value) &&
+  !value.includes("..") &&
+  !value.endsWith(".git");
 
 /** A commit: 40 lowercase hex characters, as GitHub sends them. */
 export const isCommit = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{40}$/.test(value);

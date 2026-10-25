@@ -23,15 +23,32 @@ export async function enqueue(paths: Layout, name: string, commit: string | "tip
   await rename(partial, join(paths.requests, name));
 }
 
-/** Takes every waiting request, removing each; anything that isn't one is removed too. */
+/**
+ * Takes one waiting request, or null if none is waiting. It's moved aside before
+ * it's read, so a newer request for the same product, arriving meanwhile, is kept
+ * for next time rather than lost. Anything that isn't a request is thrown away.
+ */
+export async function takeOne(paths: Layout): Promise<Request | null> {
+  for (const file of (await readdir(paths.requests).catch(() => [] as string[])).sort()) {
+    const taken = join(paths.writing, `taken-${randomBytes(6).toString("hex")}`);
+    if (
+      !(await rename(join(paths.requests, file), taken).then(
+        () => true,
+        () => false,
+      ))
+    )
+      continue;
+    const commit = (await readFile(taken, "utf8").catch(() => "")).trim();
+    await unlink(taken).catch(() => {});
+    if (isName(file) && isWanted(commit)) return { name: file, commit };
+    console.warn(`modest-host: removed ${JSON.stringify(file.slice(0, 40))} from the deploy requests: it isn't one`);
+  }
+  return null;
+}
+
+/** Takes every waiting request (for tests, and for clearing the queue). */
 export async function takeAll(paths: Layout): Promise<Request[]> {
   const taken: Request[] = [];
-  for (const file of await readdir(paths.requests).catch(() => [] as string[])) {
-    const path = join(paths.requests, file);
-    const commit = (await readFile(path, "utf8").catch(() => "")).trim();
-    await unlink(path).catch(() => {});
-    if (isName(file) && isWanted(commit)) taken.push({ name: file, commit });
-    else console.warn(`modest-host: removed ${JSON.stringify(file.slice(0, 40))} from the deploy requests: it isn't one`);
-  }
+  for (let request = await takeOne(paths); request; request = await takeOne(paths)) taken.push(request);
   return taken;
 }

@@ -110,6 +110,7 @@ test("launch makes the repository, adds the product over SSH, and gives GitHub t
           deployKey: "ssh-ed25519 AAAA modest-host shop",
         }),
       );
+    if (program === "gh" && args[0] === "api" && args.length === 2) return ok("[]");
     return ok("{}");
   };
   const lines: string[] = [];
@@ -153,16 +154,59 @@ test("launch refuses anything unsafe before running anything", async () => {
   assert.deepEqual(calls, []);
 });
 
-test("launch refuses an answer from the server that isn't what add gives", async () => {
-  const run: Run = async (program, args) => {
+test("launch refuses a server's answer that would send the webhook elsewhere, or add a key that isn't one plain key", async () => {
+  const good = { name: "shop", webhook: "https://deploy.example.org/deploy/shop", secret: "c".repeat(64), deployKey: "ssh-ed25519 AAAA modest-host shop" };
+  for (const bad of [
+    { ...good, name: "other" },
+    { ...good, secret: "x" },
+    { ...good, deployKey: "nope" },
+    { ...good, deployKey: "ssh-ed25519 AAAA ok\nssh-ed25519 BBBB attacker" },
+    { ...good, webhook: "http://deploy.example.org/deploy/shop" },
+    { ...good, webhook: "https://deploy.example.org/deploy/other" },
+    { ...good, webhook: "https://deploy.example.org:8443/deploy/shop" },
+    { ...good, webhook: "https://user@deploy.example.org/deploy/shop" },
+    { ...good, webhook: "https://deploy.example.org/deploy/shop?x=1" },
+    { ...good, webhook: "https://203.0.113.9/deploy/shop" },
+  ]) {
+    const posted: string[] = [];
+    const run: Run = async (program, args) => {
+      if (program === "gh" && args[1] === "view") return ok();
+      if (program === "ssh") return ok(JSON.stringify(bad));
+      if (program === "gh" && args[0] === "api") posted.push(args.join(" "));
+      return ok("[]");
+    };
+    await assert.rejects(
+      launch(run, { name: "shop", domain: "shop.example.org", server: "s", repo: "example/shop", visibility: "private" }, () => {}),
+      /wasn't what/,
+      JSON.stringify(bad),
+    );
+    assert.deepEqual(posted, [], "nothing reached GitHub");
+  }
+});
+
+test("launch run again updates the webhook already there, and doesn't add the same key twice", async () => {
+  const calls: { args: string[]; input?: string | undefined }[] = [];
+  const run: Run = async (program, args, options = {}) => {
+    calls.push({ args, input: options.input });
     if (program === "gh" && args[1] === "view") return ok();
-    if (program === "ssh") return ok(JSON.stringify({ name: "shop", secret: "x", deployKey: "nope", webhook: "http://x" }));
+    if (program === "ssh")
+      return ok(
+        JSON.stringify({
+          name: "shop",
+          webhook: "https://deploy.example.org/deploy/shop",
+          secret: "d".repeat(64),
+          deployKey: "ssh-ed25519 AAAA modest-host shop",
+        }),
+      );
+    if (args[1] === "repos/example/shop/keys?per_page=100") return ok(JSON.stringify([{ id: 1, key: "ssh-ed25519 AAAA" }]));
+    if (args[1] === "repos/example/shop/hooks?per_page=100") return ok(JSON.stringify([{ id: 42, config: { url: "https://deploy.example.org/deploy/shop" } }]));
     return ok("{}");
   };
-  await assert.rejects(
-    launch(run, { name: "shop", domain: "shop.example.org", server: "s", repo: "example/shop", visibility: "private" }, () => {}),
-    /wasn't what/,
-  );
+  await launch(run, { name: "shop", domain: "shop.example.org", server: "s", repo: "example/shop", visibility: "private" }, () => {});
+  assert.ok(!calls.some((c) => c.args.includes("repos/example/shop/keys") && c.args.includes("POST")), "no second key");
+  const patch = calls.find((c) => c.args.includes("PATCH"));
+  assert.ok(patch?.args.includes("repos/example/shop/hooks/42"));
+  assert.equal(JSON.parse(patch?.input ?? "").config.secret, "d".repeat(64), "the webhook signs with the new secret");
 });
 
 test("a backup copy is taken only if it's a plain file of the product's own: a link put in its place is refused, and what it points to untouched", async () => {
