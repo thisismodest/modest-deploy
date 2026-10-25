@@ -28,9 +28,11 @@ command, and every push after that deploys itself.
 reads products' sites from, and the nightly backup.
 
 **Check, any time.** `modest-host check` checks what it relies on, and says plainly
-what to fix: Node 24 or later, Caddy, and systemd present; SSH by key only, with no
-root login; automatic security updates on; and nothing listening to the outside but
-SSH, HTTP, and HTTPS. `install` and `add` won't run while a check fails.
+what to fix: Node 24 or later, Caddy, and systemd present; Node and modest-host
+readable by the services' own users; SSH by key only, with no root login (as SSH
+treats a connection from outside); automatic security updates on; and nothing
+listening to the outside but SSH, HTTP, and HTTPS. `install` and `add` won't run
+while a check fails, unless you add `--anyway`.
 
 **Launch a product, with one command from your laptop.**
 `modest-host launch <name> <domain>`:
@@ -46,22 +48,31 @@ SSH, HTTP, and HTTPS. `install` and `add` won't run while a check fails.
 **Deploy, on every push to `main` that passes CI.** GitHub sends a signed
 "workflow finished" message. The server:
 
-1. ignores anything unsigned, or not a successful run of CI on `main`;
+1. ignores anything unsigned, or not a successful run of CI on `main`, and any
+   delivery it has already acted on;
 2. fetches the repository, and deploys only if the commit is still the tip of
    `main` (so an old message, sent again, can't roll it back);
-3. installs its dependencies exactly as its lockfile says, with install scripts off;
-4. starts the new version, checks it answers, and goes back to the previous one if
-   it doesn't.
+3. refuses a release over 1GB or 200,000 files, or one the disk hasn't room for
+   (it always keeps 1GB free);
+4. installs its dependencies exactly as its lockfile says, with install scripts off;
+5. starts the new version, checks it answers, and only on 127.0.0.1, and goes back
+   to the previous one if not.
 
-**Look after the products.** Each product's databases are copied every night (with
-Node's own SQLite backup), a product that stops is restarted, and logs are kept by
-systemd's journal, within a size limit.
+`modest-host deploy <name>` deploys `main`'s newest commit by hand, whether or not its
+CI passed: that's your choice to make.
+
+**Look after the products.** Each product's databases (its files ending `.db`,
+`.sqlite`, or `.sqlite3`) are copied every night with SQLite's own backup, checked
+whole, and kept for 7 nights. A product that stops is restarted, more slowly each
+time if it keeps stopping. Logs are kept by systemd's journal.
 
 ## What a product does
 
 A product is a Node app in a GitHub repository that:
 
-- starts with `node server.js`, and listens on `process.env.PORT`;
+- starts with `node server.js`, and listens on `process.env.PORT`, at
+  `process.env.HOST` (127.0.0.1): one listening anywhere else isn't deployed, so
+  nothing reaches it but through Caddy;
 - keeps everything it writes in `process.env.DATA_DIR` (anything else is read-only);
 - answers `GET /` once it's ready;
 - has a CI workflow, `.github/workflows/ci.yml`, that runs on pushes to `main`.
@@ -78,6 +89,31 @@ Ubuntu server:
   HTTPS;
 - automatic security updates on (`unattended-upgrades`);
 - Node 24 or later, and Caddy, from their own package repositories.
+
+## Updating modest-host
+
+```sh
+sudo npm install -g modest-host@latest
+sudo modest-host install
+```
+
+Running `install` again rewrites every unit it made, the products' included, so they
+use the new version.
+
+## Restoring a backup
+
+Stop the product, put the copy back as the product's own (removing SQLite's
+`-wal` and `-shm` files, which belong to the database being replaced), and start it:
+
+```sh
+sudo systemctl stop modest-host-shop
+sudo install -o mh-shop -g mh-shop -m 600 /var/backups/modest-host/shop/2026-10-25/app.db /var/lib/modest-host/shop/app.db
+sudo rm -f /var/lib/modest-host/shop/app.db-wal /var/lib/modest-host/shop/app.db-shm
+sudo systemctl start modest-host-shop
+```
+
+Copy `/var/backups/modest-host` off the server too, or turn on your provider's
+backups: copies on the same disk don't survive losing it.
 
 ## What it doesn't do
 

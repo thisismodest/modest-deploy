@@ -211,13 +211,25 @@ assert.equal(new DatabaseSync(copy, { readOnly: true }).prepare("select count(*)
 assert.equal(statSync("/var/lib/modest-host/shop/app.db").uid, Number(sh("id", ["-u", "mh-shop"]).trim()), "the product's own files stay its own");
 ok("a working copy, readable by root only, and the product's files untouched");
 
+step("run again: add gives the same secret and key; install brings every unit up to date");
+const again = JSON.parse(mh("add", "shop", "--domain", "shop.example.org", "--repo", "example/shop", "--json").trim().split("\n").at(-1) ?? "{}");
+assert.equal(again.secret, secrets.shop);
+assert.equal(again.deployKey, added.shop?.deployKey);
+assert.match(
+  sh("modest-host", ["add", "shop", "--domain", "other.example.org", "--repo", "example/shop"], { allowFail: true }),
+  /already a product called shop/,
+);
+console.log(mh("install"));
+assert.equal(await answer(ports.shop), "shop v2");
+ok("the same secret and key; a different domain refused; install again keeps everything running");
+
 step("list, and remove");
 console.log(mh("list"));
 console.log(mh("remove", "blog"));
 assert.equal(sh("systemctl", ["is-active", "modest-host-blog.service"], { allowFail: true }).trim(), "inactive");
 assert.equal(readFileSync("/var/lib/modest-host/blog/note.txt", "utf8"), "kept");
-assert.equal((await webhook("blog", commits.blog?.[0] ?? "")).status, 404);
-ok("removed; its data kept; its webhook gone");
+assert.equal((await webhook("blog", commits.blog?.[0] ?? "")).status, 401, "the same answer as a product that never existed");
+ok("removed; its data kept; its webhook answers as if it never existed");
 
 step("check, again, with everything running");
 console.log(mh("check"));

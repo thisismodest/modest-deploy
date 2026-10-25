@@ -17,6 +17,7 @@
 
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { isIPv6 } from "node:net";
 import { extname, join, relative } from "node:path";
 
 const root = join(import.meta.dirname, "..");
@@ -46,7 +47,13 @@ const PRIVATE = [
   [/\bnpm_[A-Za-z0-9]{30,}/, "an npm token"],
   [/\bdop_v1_[a-f0-9]{30,}/, "a DigitalOcean token"],
   [/\bre_[A-Za-z0-9]{8,}_[A-Za-z0-9]{8,}/, "a Resend key"],
+  [/\bAKIA[0-9A-Z]{16}\b/, "an AWS key"],
+  [/(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])/, "something shaped like a webhook secret (64 hex characters)"],
 ] as const;
+
+/** IPv6 addresses outside the range kept for documentation (2001:db8::/32), and this machine's own. */
+const IPV6 = /(?<![\w:.])[23][0-9a-f]{3}(?::[0-9a-f]{0,4}){2,7}(?![\w:])/gi;
+const fineV6 = (address: string) => /^2001:db8:/i.test(address);
 
 let lines = 0;
 // This file names the patterns it looks for, so it isn't searched itself.
@@ -54,6 +61,9 @@ const self = relative(root, import.meta.filename);
 for (const file of committed.filter((f) => f !== self)) {
   const text = await readFile(join(root, file), "utf8").catch(() => "");
   for (const [pattern, what] of PRIVATE) if (pattern.test(text)) problems.push(`${file}: ${what}: keep it on the server, never in the repository`);
+  for (const [address = ""] of text.matchAll(IPV6)) {
+    if (isIPv6(address) && !fineV6(address)) problems.push(`${file}: the address ${address}: use one kept for examples (2001:db8::)`);
+  }
   for (const [address = ""] of text.matchAll(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g)) {
     if (!fineAddress(address)) problems.push(`${file}: the address ${address}: use one kept for examples (192.0.2.x, 198.51.100.x, 203.0.113.x)`);
   }

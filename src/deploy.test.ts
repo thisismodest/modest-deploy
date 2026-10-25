@@ -152,3 +152,27 @@ test("git and npm run as the build user, with GitHub's keys pinned and the produ
     assert.match(ssh, /StrictHostKeyChecking=yes/);
     assert.match(ssh, /-i \S+\/etc\/modest-host\/keys\/shop /);
   }));
+
+test("a package.json that's a link (to /dev/zero, or a secret) is refused, never read by root", () =>
+  onServer(async (paths) => {
+    const { deps, remote } = await setUp(paths, ["one"]);
+    for (const target of ["/dev/zero", "/etc/passwd"]) {
+      execFileSync("sh", ["-c", `rm -f "$1/package.json" && ln -s "$2" "$1/package.json"`, "sh", remote, target]);
+      execFileSync("git", ["-C", remote, "add", "-A"]);
+      execFileSync("git", ["-C", remote, "commit", "-q", "-m", `link to ${target}`]);
+      await assert.rejects(deploy(deps, PRODUCT, "tip"), /package\.json isn't a plain file/);
+    }
+    assert.equal(await running(paths, "shop"), null);
+  }));
+
+test("a version that listens beyond this machine is switched back: it must listen on HOST, behind Caddy", () =>
+  onServer(async (paths) => {
+    const { commits, deps, remote } = await setUp(paths, ["one"]);
+    await deploy(deps, PRODUCT, "tip");
+    const [, second = ""] = [...commits, ...origin(remote, ["everywhere"])];
+    const inner = deps.run;
+    deps.run = async (program, args, options) =>
+      program === "ss" ? { code: 0, stdout: "LISTEN 0 511 0.0.0.0:4100 0.0.0.0:*\n", stderr: "" } : inner(program, args, options);
+    await assert.rejects(deploy(deps, PRODUCT, second), /listens beyond this machine.*running again/);
+    assert.equal(await running(paths, "shop"), commits[0]);
+  }));

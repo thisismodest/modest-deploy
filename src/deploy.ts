@@ -3,8 +3,10 @@
 // install scripts off), switch to it, and check it answers; if it doesn't, switch back.
 // Run by the deploy service, as root, with git and npm run as the build user.
 
-import { lstat, mkdir, readdir, readFile, readlink, rename, rm, stat, symlink } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, mkdir, open, readdir, readlink, rename, rm, stat, statfs, symlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { outsidePorts } from "./check.ts";
 import { isCommit } from "./names.ts";
 import { BUILD_USER, type Layout, productUnit, productUser } from "./paths.ts";
 import type { Product } from "./products.ts";
@@ -76,6 +78,52 @@ function asBuilder(deps: Deps, product: Product) {
   return (program: string, args: string[], cwd?: string) => must(deps.run, program, args, { as: BUILD_USER, env, ...(cwd ? { cwd } : {}) });
 }
 
+/** The most a release's files may come to, and how many there may be, before it's refused. */
+const MOST_BYTES = 1024 ** 3;
+const MOST_FILES = 200_000;
+/** What's always left free on the disk the products share. */
+const KEEP_FREE = 1024 ** 3;
+
+const freeBytes = async (path: string) => {
+  const found = await statfs(path);
+  return found.bavail * found.bsize;
+};
+
+/**
+ * Refuses a release too large to build, or too large for the disk, before any of it
+ * is written: a commit can't fill the disk the other products share.
+ */
+async function roomFor(deps: Deps, product: Product, commit: string): Promise<void> {
+  const listing = await asBuilder(deps, product)("git", ["--git-dir", deps.paths.source(product.name), "ls-tree", "-r", "-l", "--full-tree", commit]);
+  const lines = listing.split("\n").filter(Boolean);
+  const bytes = lines.reduce((sum, line) => sum + (Number(line.split(/\s+/)[3]) || 0), 0);
+  if (lines.length > MOST_FILES || bytes > MOST_BYTES)
+    throw new Error(`it's too large to build: ${lines.length} files, ${Math.round(bytes / 1024 ** 2)}MB (at most ${MOST_FILES} files, and 1GB)`);
+  const free = await freeBytes(deps.paths.releases(product.name));
+  if (free < bytes * 2 + KEEP_FREE)
+    throw new Error(`the disk has ${Math.round(free / 1024 ** 2)}MB free, too little to build it and keep 1GB free: make some room`);
+}
+
+/**
+ * A small file from a release, read by root only if it's a plain file (never a link,
+ * which could point anywhere, or a device that never ends), or null if it isn't there.
+ */
+async function readPlain(path: string, most = 1024 * 1024): Promise<string | null> {
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") return null;
+    throw new Error(`${basename(path)} isn't a plain file`);
+  });
+  if (!file) return null;
+  try {
+    const found = await file.stat();
+    if (!found.isFile()) throw new Error(`${basename(path)} isn't a plain file`);
+    if (found.size > most) throw new Error(`${basename(path)} is larger than ${most / 1024}KB`);
+    return await file.readFile("utf8");
+  } finally {
+    await file.close();
+  }
+}
+
 /** Builds a release of `commit` in place, owned by root and readable by the product only. */
 async function build(deps: Deps, product: Product, commit: string): Promise<void> {
   const { paths, run } = deps;
@@ -86,14 +134,20 @@ async function build(deps: Deps, product: Product, commit: string): Promise<void
   await mkdir(staging, { recursive: true, mode: 0o700 });
   await must(run, "chown", [BUILD_USER, staging]);
   try {
+    await roomFor(deps, product, commit);
     const tarball = join(staging, ".release.tar");
     await builder("git", ["--git-dir", paths.source(name), "archive", "--format=tar", "-o", tarball, commit]);
     await builder("tar", ["-x", "-f", tarball, "-C", staging, "--no-same-owner", "--no-same-permissions"]);
     await rm(tarball);
     const server = await lstat(join(staging, "server.js")).catch(() => null);
     if (!server?.isFile()) throw new Error("it has no server.js to start");
-    const pkg = await readFile(join(staging, "package.json"), "utf8").catch(() => null);
-    const dependencies = pkg ? Object.keys((JSON.parse(pkg) as { dependencies?: object }).dependencies ?? {}) : [];
+    const pkg = await readPlain(join(staging, "package.json"));
+    let dependencies: string[] = [];
+    try {
+      dependencies = pkg ? Object.keys((JSON.parse(pkg) as { dependencies?: object }).dependencies ?? {}) : [];
+    } catch {
+      throw new Error("its package.json isn't valid JSON");
+    }
     if (dependencies.length) {
       if (!(await exists(join(staging, "package-lock.json"))))
         throw new Error("it has dependencies but no package-lock.json: commit one, so what's installed is exactly what was tested");
@@ -159,20 +213,35 @@ export async function deploy(deps: Deps, product: Product, wanted: string | "tip
   const before = await running(paths, name);
   if (before === tip) return { skipped: `${tip.slice(0, 7)} is already running` };
 
+  if ((await freeBytes(paths.releases(name))) < KEEP_FREE) throw new Error("the disk has less than 1GB free: make some room");
   log(`${name}: building ${tip.slice(0, 7)}`);
   if (!(await exists(join(paths.release(name, tip), "server.js")))) await build(deps, product, tip);
   await pointAt(paths, name, tip);
-  await must(run, "systemctl", ["restart", productUnit(name)]);
-  if (await deps.answers(product.port)) {
-    await prune(paths, name, new Set([tip, ...(before ? [before] : [])]));
-    log(`${name}: running ${tip.slice(0, 7)}`);
-    return { deployed: tip };
+  // From the switch on, any failure goes back to the version before.
+  let failure: string;
+  try {
+    await must(run, "systemctl", ["restart", productUnit(name)]);
+    if (!(await deps.answers(product.port))) failure = "didn't answer";
+    else if (await listensOutside(deps, product.port)) failure = "listens beyond this machine (it should listen on process.env.HOST)";
+    else {
+      await prune(paths, name, new Set([tip, ...(before ? [before] : [])]));
+      log(`${name}: running ${tip.slice(0, 7)}`);
+      return { deployed: tip };
+    }
+  } catch (error) {
+    failure = `failed: ${error instanceof Error ? error.message : String(error)}`;
   }
   if (before) {
     await pointAt(paths, name, before);
     await must(run, "systemctl", ["restart", productUnit(name)]);
-    throw new Error(`${tip.slice(0, 7)} didn't answer, so ${before.slice(0, 7)} is running again: see journalctl -u ${productUnit(name)}`);
+    throw new Error(`${tip.slice(0, 7)} ${failure}, so ${before.slice(0, 7)} is running again: see journalctl -u ${productUnit(name)}`);
   }
   await run("systemctl", ["stop", productUnit(name)]);
-  throw new Error(`${tip.slice(0, 7)} didn't answer, and there's nothing before it to go back to: see journalctl -u ${productUnit(name)}`);
+  throw new Error(`${tip.slice(0, 7)} ${failure}, and there's nothing before it to go back to: see journalctl -u ${productUnit(name)}`);
+}
+
+/** Whether anything listens on the product's port on an address other than this machine's own. */
+async function listensOutside(deps: Deps, port: number): Promise<boolean> {
+  const ss = await deps.run("ss", ["-Hltn"]);
+  return outsidePorts(ss.stdout).some((local) => local.endsWith(`:${port}`));
 }

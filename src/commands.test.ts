@@ -29,7 +29,7 @@ function server(answers: Record<string, Ran>): Run {
 
 test("a safe server passes every check but root (the tests aren't root)", async () => {
   const run = server({
-    "sshd -T": ok("passwordauthentication no\nkbdinteractiveauthentication no\npermitrootlogin no\n"),
+    sshd: ok("passwordauthentication no\nkbdinteractiveauthentication no\npermitrootlogin no\n"),
     "dpkg-query -W -f=${Status} unattended-upgrades": ok("install ok installed"),
     "ss -Hltn": ok("LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*"),
   });
@@ -42,7 +42,7 @@ test("a safe server passes every check but root (the tests aren't root)", async 
 
 test("password sign-in, root sign-in, no automatic updates, and an open port are each found, with what to do", async () => {
   const run = server({
-    "sshd -T": ok("passwordauthentication yes\nkbdinteractiveauthentication no\npermitrootlogin prohibit-password\n"),
+    sshd: ok("passwordauthentication yes\nkbdinteractiveauthentication no\npermitrootlogin prohibit-password\n"),
     "dpkg-query -W -f=${Status} unattended-upgrades": ok("unknown ok not-installed"),
     "ss -Hltn": ok("LISTEN 0 4096 0.0.0.0:3000 0.0.0.0:*"),
     caddy: { code: 1, stdout: "", stderr: "not found" },
@@ -228,4 +228,15 @@ test("a backup copy is taken only if it's a plain file of the product's own: a l
   assert.equal(await readFile(join(dir, "out4"), "utf8"), "a database");
   assert.equal((await stat(join(dir, "out4"))).mode & 0o777, 0o600);
   assert.equal((await stat(precious)).mode & 0o777, 0o644);
+});
+
+test("SSH on its own port isn't counted as open, but anything else listening over UDP is", async () => {
+  const run = server({
+    sshd: ok("port 2222\npasswordauthentication no\nkbdinteractiveauthentication no\npermitrootlogin no\n"),
+    "ss -Hltn": ok("LISTEN 0 4096 0.0.0.0:2222 0.0.0.0:*"),
+    "ss -Hlun": ok("UNCONN 0 0 0.0.0.0:68 0.0.0.0:*\nUNCONN 0 0 [::]:443 [::]:*\nUNCONN 0 0 0.0.0.0:5353 0.0.0.0:*\nUNCONN 0 0 127.0.0.53%lo:53 0.0.0.0:*"),
+  });
+  const listening = (await checkServer(run, async () => "")).find((f) => f.what.startsWith("nothing listening"));
+  assert.equal(listening?.ok, false);
+  assert.equal(listening?.fix, "stop, or listen only on 127.0.0.1: 0.0.0.0:5353 (UDP)");
 });

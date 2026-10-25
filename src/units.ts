@@ -46,6 +46,8 @@ export function productService(paths: Layout, product: Product, node: string): s
 Description=modest-host: ${name} (${domain})
 After=network-online.target
 Wants=network-online.target
+# A product that keeps failing is restarted more and more slowly, but never given up on.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -62,6 +64,8 @@ StateDirectory=modest-host/${name}
 StateDirectoryMode=0700
 Restart=always
 RestartSec=2
+RestartSteps=10
+RestartMaxDelaySec=60
 ${SANDBOX}
 SocketBindAllow=tcp:${port}
 SocketBindDeny=any
@@ -115,7 +119,12 @@ StartLimitIntervalSec=0
 [Service]
 Type=oneshot
 ExecStart=${node} ${cli} work
-TimeoutStartSec=20min
+# Each step has its own time limit (git and npm 10 minutes, the check a minute), so the whole has none:
+# a deploy is never cut off between switching and checking.
+TimeoutStartSec=infinity
+MemoryMax=1G
+PrivateDevices=yes
+ProtectSystem=full
 PrivateTmp=yes
 ProtectHome=yes
 ProtectKernelModules=yes
@@ -146,7 +155,9 @@ Description=modest-host: copy every product's databases
 
 [Service]
 Type=oneshot
-ExecStart=${node} ${cli} backup
+ExecStart=${node} ${cli} backup-now
+PrivateDevices=yes
+ProtectSystem=full
 PrivateTmp=yes
 ProtectHome=yes
 `;

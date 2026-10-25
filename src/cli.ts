@@ -11,7 +11,7 @@ import { createListener } from "./listener.ts";
 import { isName } from "./names.ts";
 import { LISTENER_PORT, layout, productUnit } from "./paths.ts";
 import { readProduct } from "./products.ts";
-import { enqueue, takeAll } from "./queue.ts";
+import { enqueue, takeOne } from "./queue.ts";
 import { must, run } from "./run.ts";
 import { add, backup, copyDatabase, install, list, remove, type Server } from "./server.ts";
 
@@ -19,11 +19,11 @@ const USAGE = `modest-host: host small Node products on one server.
 
 On the server (with sudo):
   check                                         check the server is set up safely
-  install --domain <deploy-domain>              install modest-host's own parts, once
+  install --domain <deploy-domain>              install modest-host's own parts; again after updating it
   add <name> --domain <domain> --repo <owner/repo> [--json]
                                                 add a product (launch does this for you)
   list                                          the products, and what each is running
-  deploy <name>                                 deploy main's newest commit now
+  deploy <name>                                 deploy main's newest commit now (whether or not CI passed)
   restart <name>                                restart a product (after changing its keys)
   logs <name>                                   a product's latest log lines
   remove <name>                                 take a product off (its data stays)
@@ -72,12 +72,12 @@ async function main(argv: string[]): Promise<void> {
   const { words, flag, text } = parse(rest);
   switch (command) {
     case "check": {
-      if (!report(await checkServer(run))) process.exitCode = 1;
+      if (!report(await checkServer(run, undefined, realpathSync(process.argv[1] ?? "")))) process.exitCode = 1;
       return;
     }
     case "install":
       asRoot();
-      return install(server(), text("domain") ?? "", flag("anyway"));
+      return install(server(), text("domain"), flag("anyway"));
     case "add": {
       asRoot();
       const added = await add(server(), product(words[0]), text("domain") ?? "", text("repo") ?? "", flag("anyway"));
@@ -114,11 +114,18 @@ async function main(argv: string[]): Promise<void> {
       const kept = await remove(server(), product(words[0]));
       log("Removed. Kept, until you delete them yourself:");
       for (const path of kept) log(`  ${path}`);
+      log("On GitHub, delete the repository's webhook and deploy key for this server (Settings, then Webhooks and Deploy keys).");
       return;
     }
-    case "backup":
+    case "backup": {
+      // Through systemd, so it never runs twice at once (the nightly one and this).
       asRoot();
-      return log(`Copied ${await backup(server())} databases.`);
+      const ran = await run("systemctl", ["start", "modest-host-backup.service"], { timeout: 6 * 60 * 60_000 });
+      const said = await run("journalctl", ["-u", "modest-host-backup.service", "-n", "20", "--no-pager", "-o", "cat", "--since", "-6h"]);
+      log(said.stdout.trimEnd().split("\n").slice(-10).join("\n"));
+      if (ran.code !== 0) throw new Error("some copies weren't made: see journalctl -u modest-host-backup.service");
+      return;
+    }
     case "launch":
       return launch(
         run,
@@ -139,23 +146,28 @@ async function main(argv: string[]): Promise<void> {
       return;
     }
     case "work": {
+      // One request at a time: the rest wait in the queue, so none is lost if this stops.
       const paths = layout();
-      for (let requests = await takeAll(paths); requests.length; requests = await takeAll(paths)) {
-        for (const request of requests) {
-          const found = await readProduct(paths, request.name).catch(() => null);
-          if (!found) {
-            console.error(`modest-host: ${request.name}: no such product`);
-            continue;
-          }
-          try {
-            const outcome = await deploy({ run, paths, answers: (port) => answersWithin(port), log }, found, request.commit);
-            if ("skipped" in outcome) log(`modest-host: ${request.name}: nothing to do: ${outcome.skipped}`);
-          } catch (error) {
-            console.error(`modest-host: ${request.name}: not deployed: ${error instanceof Error ? error.message : String(error)}`);
-            process.exitCode = 1;
-          }
+      for (let request = await takeOne(paths); request; request = await takeOne(paths)) {
+        const found = await readProduct(paths, request.name).catch(() => null);
+        if (!found) {
+          console.error(`modest-host: ${request.name}: no such product`);
+          continue;
+        }
+        try {
+          const outcome = await deploy({ run, paths, answers: (port) => answersWithin(port), log }, found, request.commit);
+          if ("skipped" in outcome) log(`modest-host: ${request.name}: nothing to do: ${outcome.skipped}`);
+        } catch (error) {
+          console.error(`modest-host: ${request.name}: not deployed: ${error instanceof Error ? error.message : String(error)}`);
+          process.exitCode = 1;
         }
       }
+      return;
+    }
+    case "backup-now": {
+      const { copied, failed } = await backup(server());
+      log(`modest-host: copied ${copied} databases${failed ? `; ${failed} couldn't be copied (above)` : ""}.`);
+      if (failed) process.exitCode = 1;
       return;
     }
     case "copy-database":

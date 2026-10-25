@@ -4,10 +4,10 @@
 
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { chmod, chown, mkdir, open, readdir, readFile, rm, stat } from "node:fs/promises";
+import { chmod, chown, mkdir, open, readdir, readFile, rename, rm, stat, statfs } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { checkServer, report } from "./check.ts";
-import { running } from "./deploy.ts";
+import { answersWithin, running } from "./deploy.ts";
 import { isDomain, isName, isRepo } from "./names.ts";
 import { BUILD_USER, type Layout, LISTENER_USER, productUnit, productUser } from "./paths.ts";
 import { freePort, listProducts, type Product, readHost, readProduct, saveProduct, writeWhole } from "./products.ts";
@@ -18,7 +18,7 @@ export type Server = { run: Run; paths: Layout; node: string; cli: string; log: 
 
 /** Checks the server, and refuses to go on if anything needs fixing (unless told to go on anyway). */
 async function checked(server: Server, anyway: boolean): Promise<void> {
-  const ok = report(await checkServer(server.run));
+  const ok = report(await checkServer(server.run, undefined, server.cli));
   if (!ok && !anyway) throw new Error("fix what's above first (or add --anyway, if you're sure)");
 }
 
@@ -55,8 +55,16 @@ async function caddyWith(server: Server, file: string, text: string | null): Pro
 
 /** GitHub's SSH host keys, as GitHub publishes them over HTTPS: fetched, never trusted on first use. */
 async function githubHostKeys(): Promise<string> {
-  const res = await fetch("https://api.github.com/meta", { headers: { accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(20_000) });
-  if (!res.ok) throw new Error(`GitHub's host keys couldn't be fetched (${res.status})`);
+  const advice = "check this server can reach api.github.com, then run install again";
+  const res = await fetch("https://api.github.com/meta", { headers: { accept: "application/vnd.github+json" }, signal: AbortSignal.timeout(20_000) }).catch(
+    () => {
+      throw new Error(`GitHub's host keys couldn't be fetched: ${advice}`);
+    },
+  );
+  if (!res.ok)
+    throw new Error(
+      `GitHub's host keys couldn't be fetched (GitHub answered ${res.status}): ${advice}${res.status === 403 ? ", in an hour (GitHub limits how often it's asked)" : ""}`,
+    );
   const keys = ((await res.json()) as { ssh_keys?: unknown }).ssh_keys;
   if (
     !Array.isArray(keys) ||
@@ -71,10 +79,28 @@ async function githubHostKeys(): Promise<string> {
     .concat("\n");
 }
 
-export async function install(server: Server, domain: string, anyway = false): Promise<void> {
-  if (!isDomain(domain)) throw new Error("the deploy domain must be a domain, such as deploy.example.org");
-  await checked(server, anyway);
+/** The ports something is already listening on, on any address. */
+async function listening(server: Server): Promise<Set<number>> {
+  const ss = await server.run("ss", ["-Hltn"]);
+  return new Set(
+    ss.stdout
+      .split("\n")
+      .map((line) => Number(line.trim().split(/\s+/)[3]?.split(":").at(-1)))
+      .filter(Number.isInteger),
+  );
+}
+
+/**
+ * Installs modest-host's own parts, or, run again (after updating modest-host), brings
+ * every unit it wrote up to date, products' included. The deploy domain can be left
+ * out then: the one already set is kept.
+ */
+export async function install(server: Server, given: string | undefined, anyway = false): Promise<void> {
   const { paths, run, node, cli } = server;
+  const before = await readHost(paths).catch(() => null);
+  const domain = given || before?.domain;
+  if (!isDomain(domain)) throw new Error("the deploy domain must be a domain, such as deploy.example.org: add --domain");
+  await checked(server, anyway);
   await systemUser(server, LISTENER_USER);
   await systemUser(server, BUILD_USER, paths.buildHome);
 
@@ -95,6 +121,18 @@ export async function install(server: Server, domain: string, anyway = false): P
 
   await writeWhole(paths.knownHosts, await githubHostKeys());
   await chown(paths.knownHosts, await uid(server, BUILD_USER), 0);
+
+  // Caddy first: if it can't use the change, its own Caddyfile is put back as it was, and nothing else has changed.
+  const caddyfile = await readFile(paths.caddyfile, "utf8").catch(() => "");
+  if (!caddyfile.split("\n").some((line) => line.trim() === caddyImport(paths))) {
+    await writeWhole(paths.caddyfile, `${caddyfile.replace(/\n*$/, "\n")}\n# Added by modest-host: its products' sites.\n${caddyImport(paths)}\n`);
+  }
+  try {
+    await caddyWith(server, paths.caddySite("_host"), hostSite(domain));
+  } catch (error) {
+    await writeWhole(paths.caddyfile, caddyfile);
+    throw new Error(`${error instanceof Error ? error.message : String(error)} (if your Caddyfile is one site without braces, put braces round it)`);
+  }
   await writeWhole(paths.host, `${JSON.stringify({ domain }, null, 2)}\n`);
 
   await writeWhole(paths.unit("modest-host-listener.service"), listenerService(paths, node, cli));
@@ -102,20 +140,32 @@ export async function install(server: Server, domain: string, anyway = false): P
   await writeWhole(paths.unit("modest-host-deploy.path"), deployPath(paths));
   await writeWhole(paths.unit("modest-host-backup.service"), backupService(node, cli));
   await writeWhole(paths.unit("modest-host-backup.timer"), BACKUP_TIMER);
+  const products = await listProducts(paths);
+  for (const product of products) await writeWhole(paths.unit(productUnit(product.name)), productService(paths, product, node));
   await must(run, "systemctl", ["daemon-reload"]);
   await must(run, "systemctl", ["enable", "--now", "modest-host-listener.service", "modest-host-deploy.path", "modest-host-backup.timer"]);
   await must(run, "systemctl", ["restart", "modest-host-listener.service"]);
-
-  const caddyfile = await readFile(paths.caddyfile, "utf8").catch(() => "");
-  if (!caddyfile.split("\n").some((line) => line.trim() === caddyImport(paths))) {
-    await writeWhole(paths.caddyfile, `${caddyfile.replace(/\n*$/, "\n")}\n# Added by modest-host: its products' sites.\n${caddyImport(paths)}\n`);
+  for (const product of products) {
+    if ((await run("systemctl", ["is-active", "--quiet", productUnit(product.name)])).code !== 0) continue;
+    await run("systemctl", ["restart", productUnit(product.name)]);
+    const answering = await answersWithin(product.port);
+    server.log(
+      answering ? `${product.name}: restarted, and answering.` : `${product.name}: restarted, but not answering: see modest-host logs ${product.name}`,
+    );
   }
-  await caddyWith(server, paths.caddySite("_host"), hostSite(domain));
   server.log(`Installed. Point ${domain}'s DNS at this server: GitHub's messages arrive there.`);
+  if (before && before.domain !== domain && products.length) {
+    server.log(`The deploy domain was ${before.domain}: run modest-host launch again for each product, so GitHub's webhooks point to ${domain}.`);
+  }
 }
 
 export type Added = { name: string; domain: string; repo: string; webhook: string; secret: string; deployKey: string };
 
+/**
+ * Adds a product. Caddy is asked first, and the settings saved last, so a failure
+ * part way leaves nothing that stops it being run again. Run again for a product
+ * already added (the same domain and repository), it gives the same secret and key.
+ */
 export async function add(server: Server, name: string, domain: string, repo: string, anyway = false): Promise<Added> {
   if (!isName(name)) throw new Error("the name must be 2 to 29 lowercase letters, digits, and single hyphens, starting with a letter");
   if (!isDomain(domain)) throw new Error("the domain must be a domain, such as shop.example.org");
@@ -123,21 +173,38 @@ export async function add(server: Server, name: string, domain: string, repo: st
   await checked(server, anyway);
   const { paths, run, node } = server;
   const host = await readHost(paths);
-  if (await readProduct(paths, name)) throw new Error(`there's already a product called ${name}`);
-  const products = await listProducts(paths);
-  if (domain === host.domain || products.some((p) => p.domain === domain)) throw new Error(`${domain} is already in use here`);
+  const existing = await readProduct(paths, name);
+  if (existing && (existing.domain !== domain || existing.repo.toLowerCase() !== repo.toLowerCase())) {
+    throw new Error(`there's already a product called ${name}, for ${existing.domain} and ${existing.repo}`);
+  }
+  const others = (await listProducts(paths)).filter((p) => p.name !== name);
+  if (domain === host.domain || others.some((p) => p.domain === domain)) throw new Error(`${domain} is already in use here`);
+  const product: Product = existing ?? {
+    name,
+    domain,
+    repo,
+    port: freePort(others, await listening(server)),
+    branch: "main",
+    workflow: ".github/workflows/ci.yml",
+  };
 
+  await caddyWith(server, paths.caddySite(name), productSite(product));
   const user = productUser(name);
   await systemUser(server, user);
-  const product: Product = { name, domain, repo, port: freePort(products), branch: "main", workflow: ".github/workflows/ci.yml" };
 
-  const secret = randomBytes(32).toString("hex");
-  await writeWhole(paths.secret(name), secret, 0o640);
+  let secret = existing ? (await readFile(paths.secret(name), "utf8").catch(() => "")).trim() : "";
+  if (!/^[0-9a-f]{64}$/.test(secret)) {
+    secret = randomBytes(32).toString("hex");
+    await writeWhole(paths.secret(name), secret, 0o640);
+  }
   await chown(paths.secret(name), 0, Number((await must(run, "id", ["-g", LISTENER_USER])).trim()));
-  await rm(paths.key(name), { force: true });
-  await rm(`${paths.key(name)}.pub`, { force: true });
-  await must(run, "ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-C", `modest-host ${name}`, "-f", paths.key(name)], { as: BUILD_USER });
-  const deployKey = (await readFile(`${paths.key(name)}.pub`, "utf8")).trim();
+  let deployKey = existing ? (await readFile(`${paths.key(name)}.pub`, "utf8").catch(() => "")).trim() : "";
+  if (!deployKey) {
+    await rm(paths.key(name), { force: true });
+    await rm(`${paths.key(name)}.pub`, { force: true });
+    await must(run, "ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-C", `modest-host ${name}`, "-f", paths.key(name)], { as: BUILD_USER });
+    deployKey = (await readFile(`${paths.key(name)}.pub`, "utf8")).trim();
+  }
   if ((await readFile(paths.env(name), "utf8").catch(() => null)) === null) {
     await writeWhole(paths.env(name), `# ${name}'s own keys, one KEY=value a line. After a change: modest-host restart ${name}\n`, 0o600);
   }
@@ -147,19 +214,22 @@ export async function add(server: Server, name: string, domain: string, repo: st
   await folder(server, paths.source(name), 0o700, BUILD_USER);
   await must(run, "git", ["init", "--quiet", "--bare", paths.source(name)], { as: BUILD_USER });
 
-  await saveProduct(paths, product);
   await writeWhole(paths.unit(productUnit(name)), productService(paths, product, node));
   await must(run, "systemctl", ["daemon-reload"]);
   await must(run, "systemctl", ["enable", productUnit(name)]);
-  await caddyWith(server, paths.caddySite(name), productSite(product));
-  return { name, domain, repo, webhook: `https://${host.domain}/deploy/${name}`, secret, deployKey };
+  await saveProduct(paths, product);
+  return { name, domain, repo: product.repo, webhook: `https://${host.domain}/deploy/${name}`, secret, deployKey };
 }
 
-/** Takes a product off the server. Its data, keys, and copies stay, until deleted by hand. */
+/** Takes a product off the server, even one whose settings are broken. Its data, keys file, and copies stay, until deleted by hand. */
 export async function remove(server: Server, name: string): Promise<string[]> {
   const { paths, run } = server;
-  const product = await readProduct(paths, name);
-  if (!product) throw new Error(`there's no product called ${name}`);
+  if (!isName(name)) throw new Error(`there's no product called ${name}`);
+  const there = await readFile(paths.product(name), "utf8").then(
+    () => true,
+    () => false,
+  );
+  if (!there) throw new Error(`there's no product called ${name}`);
   await run("systemctl", ["disable", "--now", productUnit(name)]);
   await rm(paths.unit(productUnit(name)), { force: true });
   await must(run, "systemctl", ["daemon-reload"]);
@@ -193,9 +263,14 @@ const NIGHTS = 7;
  * use. Each copy is made as the product's own user (so its files stay its own), into
  * a folder only it can write, then moved where only root can read.
  */
-export async function backup(server: Server, today = new Date().toISOString().slice(0, 10)): Promise<number> {
+export async function backup(server: Server, today = new Date().toISOString().slice(0, 10)): Promise<{ copied: number; failed: number }> {
   const { paths, run, node, cli } = server;
   let copied = 0;
+  let failed = 0;
+  const failure = (product: string, db: string, why: string) => {
+    failed++;
+    console.error(`modest-host: ${product}: ${db} wasn't copied: ${why}`);
+  };
   for (const product of await listProducts(paths)) {
     const user = productUser(product.name);
     // Each product's user can reach only its own folder here (the parent can be passed through, not listed).
@@ -205,28 +280,37 @@ export async function backup(server: Server, today = new Date().toISOString().sl
     await folder(server, work, 0o700, user);
     const night = join(paths.backups(product.name), today);
     for (const db of await databases(paths.data(product.name))) {
+      const named = relative(paths.data(product.name), db);
+      const size = (await stat(db)).size;
+      await mkdir(paths.backups(product.name), { recursive: true, mode: 0o700 });
+      const free = await statfs(paths.backups(product.name));
+      if (free.bavail * free.bsize < size * 2 + 1024 ** 3) {
+        failure(product.name, named, "too little room on the disk (it keeps 1GB free)");
+        continue;
+      }
       const copy = join(work, "copy.db");
       const made = await run(node, [cli, "copy-database", db, copy], { as: user });
       if (made.code !== 0) {
-        console.error(`modest-host: ${product.name}: ${relative(paths.data(product.name), db)} couldn't be copied: ${made.stderr.trim().split("\n").at(-1)}`);
+        failure(product.name, named, made.stderr.trim().split("\n").at(-1) ?? "");
         continue;
       }
-      const to = join(night, relative(paths.data(product.name), db));
+      const to = join(night, named);
       await mkdir(join(to, ".."), { recursive: true, mode: 0o700 });
       try {
-        await takeCopy(copy, to, await uid(server, user));
+        // Under another name until it's whole, so a copy cut short is never taken for one.
+        await takeCopy(copy, `${to}.partial`, await uid(server, user));
+        await rename(`${to}.partial`, to);
         copied++;
       } catch (error) {
-        console.error(
-          `modest-host: ${product.name}: ${relative(paths.data(product.name), db)}'s copy wasn't taken: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        await rm(`${to}.partial`, { force: true });
+        failure(product.name, named, error instanceof Error ? error.message : String(error));
       }
     }
     await rm(work, { recursive: true, force: true });
     const nights = (await readdir(paths.backups(product.name)).catch(() => [] as string[])).filter((n) => /^\d{4}-\d{2}-\d{2}$/.test(n)).sort();
     for (const old of nights.slice(0, Math.max(0, nights.length - NIGHTS))) await rm(join(paths.backups(product.name), old), { recursive: true, force: true });
   }
-  return copied;
+  return { copied, failed };
 }
 
 /**
@@ -235,7 +319,7 @@ export async function backup(server: Server, today = new Date().toISOString().sl
  * Only a plain file the product owns is read, into a new file only root can read.
  */
 export async function takeCopy(from: string, to: string, owner: number): Promise<void> {
-  const source = await open(from, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const source = await open(from, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const found = await source.stat();
     if (!found.isFile() || found.uid !== owner || found.nlink !== 1) throw new Error("it isn't a plain file of the product's own");
@@ -263,5 +347,13 @@ export async function copyDatabase(from: string, to: string): Promise<void> {
     await copy(db, to);
   } finally {
     db.close();
+  }
+  // A copy is only kept if SQLite finds it whole.
+  const made = new DatabaseSync(to, { readOnly: true });
+  try {
+    const result = made.prepare("PRAGMA quick_check").get() as { quick_check?: string } | undefined;
+    if (result?.quick_check !== "ok") throw new Error(`the copy isn't whole: ${String(result?.quick_check)}`);
+  } finally {
+    made.close();
   }
 }
