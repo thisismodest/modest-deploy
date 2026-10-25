@@ -33,6 +33,8 @@ function fakeSystem(remote: string, recorded: Recorded): Run {
   return async (program, args, options = {}) => {
     recorded.push([program, ...args]);
     if (["systemctl", "chown", "chmod"].includes(program)) return { code: 0, stdout: "", stderr: "" };
+    // No build user's processes to stop here.
+    if (program === "pkill" || program === "pgrep") return { code: 1, stdout: "", stderr: "" };
     const swapped = args.map((a) => (a.startsWith("git@github.com:") ? remote : a));
     const { as: _as, env: _env, ...rest } = options;
     return realRun(program, swapped, rest);
@@ -216,4 +218,33 @@ test("a commit that failed isn't tried again by a message sent again, only by ha
     assert.equal(recorded.filter((c) => c[1] === "restart").length, restarts, "the product wasn't restarted");
     answers.push(true);
     assert.deepEqual(await deploy(deps, PRODUCT, "tip"), { deployed: broken }, "by hand, it's tried again");
+  }));
+
+test("each deploy starts the build user clean: hooks, settings, and anything in its home from last time are gone", () =>
+  onServer(async (paths) => {
+    const { deps } = await setUp(paths, ["one"]);
+    const { mkdir, writeFile, readFile } = await import("node:fs/promises");
+    await mkdir(join(paths.source("shop"), "hooks"), { recursive: true });
+    await writeFile(join(paths.source("shop"), "hooks", "post-fetch"), "#!/bin/sh\necho planted\n");
+    await writeFile(join(paths.source("shop"), "config"), '[core]\n\tbare = true\n[url "https://evil.example/"]\n\tinsteadOf = git@github.com:\n');
+    await mkdir(join(paths.buildHome("shop"), ".ssh"), { recursive: true });
+    await writeFile(join(paths.buildHome("shop"), ".ssh", "config"), "Host *\n  ProxyCommand sh -c 'echo planted'\n");
+    await deploy(deps, PRODUCT, "tip");
+    assert.doesNotMatch(await readFile(join(paths.source("shop"), "config"), "utf8"), /evil|insteadOf/);
+    assert.equal(execFileSync("ls", ["-A", paths.source("shop")], { encoding: "utf8" }).includes("hooks"), false);
+    assert.equal(execFileSync("ls", ["-A", paths.buildHome("shop")], { encoding: "utf8" }).trim(), "");
+  }));
+
+test("a release holding a hard link is refused: root taking it over would take over what it's linked to", () =>
+  onServer(async (paths) => {
+    const { deps } = await setUp(paths, ["one"]);
+    const inner = deps.run;
+    deps.run = async (program, args, options) => {
+      const ran = await inner(program, args, options);
+      // As a build that ran code of its own might: a hard link to something outside, put in during the build.
+      if (program === "tar") execFileSync("ln", [join(paths.root, "outside"), join(args[args.indexOf("-C") + 1] ?? "", "linked")]);
+      return ran;
+    };
+    execFileSync("sh", ["-c", `echo secret > "$1/outside"`, "sh", paths.root]);
+    await assert.rejects(deploy(deps, PRODUCT, "tip"), /hard link/);
   }));

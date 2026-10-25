@@ -80,11 +80,56 @@ function asBuilder(deps: Deps, product: Product) {
     npm_config_ignore_scripts: "true",
     npm_config_registry: "https://registry.npmjs.org/",
     // Its own read-only key, and GitHub's host keys as published (never trusted on first use).
-    GIT_SSH_COMMAND: `ssh -i ${paths.key(product.name)} -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${paths.knownHosts}`,
+    GIT_SSH_COMMAND: `ssh -F /dev/null -i ${paths.key(product.name)} -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${paths.knownHosts}`,
     npm_config_cache: join(paths.buildHome(product.name), "npm-cache"),
     npm_config_update_notifier: "false",
   };
-  return (program: string, args: string[], cwd?: string) => must(deps.run, program, args, { as: buildUser(product.name), env, ...(cwd ? { cwd } : {}) });
+  // After every step, nothing of the build user's is left running: whatever root does next with
+  // its files, nothing of the build's can race it, or change a release root has taken over.
+  return async (program: string, args: string[], cwd?: string, allowFail = false) => {
+    try {
+      if (allowFail) return (await deps.run(program, args, { as: buildUser(product.name), env, ...(cwd ? { cwd } : {}) })).code === 0 ? "yes" : "";
+      return await must(deps.run, program, args, { as: buildUser(product.name), env, ...(cwd ? { cwd } : {}) });
+    } finally {
+      await stopBuilder(deps, product.name);
+    }
+  };
+}
+
+/** Stops every process of the product's build user, and waits until they've gone. */
+async function stopBuilder(deps: Deps, name: string): Promise<void> {
+  await deps.run("pkill", ["-KILL", "-u", buildUser(name)]);
+  for (let i = 0; i < 50 && (await deps.run("pgrep", ["-u", buildUser(name)])).code === 0; i++) await new Promise((wait) => setTimeout(wait, 100));
+}
+
+/**
+ * Each deploy starts the build user afresh: its home emptied, and its copy of the
+ * repository given git's settings and no hooks. So nothing a build did last time (had
+ * it ever run code of its own) can carry over into this one.
+ */
+async function startClean(deps: Deps, product: Product): Promise<void> {
+  const { paths, run } = deps;
+  const { name } = product;
+  await stopBuilder(deps, name);
+  await rm(paths.buildHome(name), { recursive: true, force: true });
+  await mkdir(paths.buildHome(name), { recursive: true, mode: 0o700 });
+  await must(run, "chown", [`${buildUser(name)}:${buildUser(name)}`, paths.buildHome(name)]);
+  const source = paths.source(name);
+  if (!(await exists(join(source, "HEAD")))) {
+    await mkdir(source, { recursive: true, mode: 0o700 });
+    await must(run, "chown", [`${buildUser(name)}:${buildUser(name)}`, source]);
+    await asBuilder(deps, product)("git", ["init", "--quiet", "--bare", source]);
+  }
+  for (const part of ["config", "hooks", "info"]) await rm(join(source, part), { recursive: true, force: true });
+  await writeFile(join(source, "config"), "[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = true\n", { flag: "wx", mode: 0o644 });
+}
+
+/** Refuses a release holding a hard link: root taking it over would take over what it's linked to. */
+async function noHardLinks(dir: string): Promise<void> {
+  for (const entry of await readdir(dir, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    if ((await lstat(join(entry.parentPath, entry.name))).nlink > 1) throw new Error(`it holds a hard link (${entry.name}), which isn't allowed`);
+  }
 }
 
 /** The most a release's files may come to, and how many there may be, before it's refused. */
@@ -167,6 +212,7 @@ async function build(deps: Deps, product: Product, commit: string): Promise<void
       if ((await freeBytes(staging)) < KEEP_FREE) throw new Error("its dependencies leave less than 1GB free on the disk: make some room");
     }
     // From here, nobody can change it: root owns it, and only the product's own user can read it.
+    await noHardLinks(staging);
     await must(run, "chown", ["-R", "--no-dereference", `root:${productUser(name)}`, staging]);
     await must(run, "chmod", ["-R", "u=rwX,g=rX,o=", staging]);
     await rm(paths.release(name, commit), { recursive: true, force: true });
@@ -193,8 +239,9 @@ async function prune(paths: Layout, name: string, keep: Set<string>): Promise<vo
  * An older commit is skipped, so a message sent again can't roll a product back.
  */
 export async function deploy(deps: Deps, product: Product, wanted: string | "tip"): Promise<Outcome> {
-  const { paths, run } = deps;
+  const { paths } = deps;
   const { name } = product;
+  await startClean(deps, product);
   const builder = asBuilder(deps, product);
   const source = paths.source(name);
   const refspec = `+refs/heads/${product.branch}:refs/heads/${product.branch}`;
@@ -215,12 +262,11 @@ export async function deploy(deps: Deps, product: Product, wanted: string | "tip
   const tip = (await builder("git", ["--git-dir", source, "rev-parse", "--verify", `refs/heads/${product.branch}^{commit}`])).trim();
   if (!isCommit(tip)) throw new Error(`${product.branch} isn't a commit`);
   if (wanted !== "tip" && wanted !== tip) {
-    const older = await run("git", ["--git-dir", source, "merge-base", "--is-ancestor", wanted, tip], { as: buildUser(name) });
+    const older = await builder("git", ["--git-dir", source, "merge-base", "--is-ancestor", wanted, tip], undefined, true);
     return {
-      skipped:
-        older.code === 0
-          ? `${wanted.slice(0, 7)} is older than ${product.branch}'s newest, ${tip.slice(0, 7)}`
-          : `${wanted.slice(0, 7)} isn't on ${product.branch}`,
+      skipped: older
+        ? `${wanted.slice(0, 7)} is older than ${product.branch}'s newest, ${tip.slice(0, 7)}`
+        : `${wanted.slice(0, 7)} isn't on ${product.branch}`,
     };
   }
   const before = await running(paths, name);
@@ -235,7 +281,7 @@ export async function deploy(deps: Deps, product: Product, wanted: string | "tip
     await rm(failed, { force: true });
     return outcome;
   } catch (error) {
-    await writeFile(failed, tip);
+    await writeFile(failed, tip).catch(() => {});
     throw error;
   }
 }
