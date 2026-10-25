@@ -9,7 +9,7 @@
     "node": ">=24"
   },
   "bin": {
-    "modest-deploy": "./dist/cli.js"
+    "modest-deploy": "dist/cli.js"
   },
   "files": [
     "dist",
