@@ -82,8 +82,7 @@ A product is a Node app in a GitHub repository that:
 
 modest-deploy doesn't set up the server itself: your hosting provider and a few
 minutes by hand do it better, and `modest-deploy check` checks the result. On a new
-Ubuntu 26.04 LTS server. (24.04 LTS also works, but it can't stop a compromised product
-from opening other ports: see the threat model's known limits.)
+Ubuntu 26.04 LTS server:
 
 - sign in with an SSH key (add it when creating the server), with password sign-in
   and root sign-in turned off;
@@ -91,6 +90,9 @@ from opening other ports: see the threat model's known limits.)
   HTTPS;
 - automatic security updates on (`unattended-upgrades`);
 - Node 24 or later, and Caddy, from their own package repositories.
+
+24.04 LTS also works, but it can't stop a compromised product from opening other
+ports (see the threat model's known limits).
 
 ## Installing
 
