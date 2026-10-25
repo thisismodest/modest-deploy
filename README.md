@@ -96,7 +96,7 @@ ports (see the threat model's known limits).
 
 ## Installing
 
-[Step by step](https://thisismodest.com/modest-deploy/start.html) goes from a new
+[Step by step](https://modest-deploy.com/start.html) goes from a new
 Ubuntu server to a product live on your domain. In short, on the server, from npm:
 
 ```sh
