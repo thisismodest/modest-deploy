@@ -93,7 +93,8 @@ Ubuntu server:
 
 ## Installing
 
-On the server, from npm:
+[Step by step](https://thisismodest.com/modest-deploy/start.html) goes from a new
+Ubuntu server to a product live on your domain. In short, on the server, from npm:
 
 ```sh
 sudo npm install -g modest-deploy

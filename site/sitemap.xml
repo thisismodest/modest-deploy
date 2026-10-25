@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://thisismodest.com/modest-deploy/</loc></url>
+  <url><loc>https://thisismodest.com/modest-deploy/start.html</loc></url>
   <url><loc>https://thisismodest.com/modest-deploy/docs.html</loc></url>
   <url><loc>https://thisismodest.com/modest-deploy/security.html</loc></url>
   <url><loc>https://thisismodest.com/modest-deploy/legal.html</loc></url>

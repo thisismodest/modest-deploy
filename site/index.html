@@ -33,6 +33,7 @@
           <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="#151515" /><rect x="6" y="6.5" width="12" height="4.6" rx="1.3" fill="#fff" /><rect x="6" y="12.9" width="12" height="4.6" rx="1.3" fill="#fff" /><circle cx="8.6" cy="8.8" r="0.85" fill="#151515" /><circle cx="8.6" cy="15.2" r="0.85" fill="#151515" /></svg>
           modest-deploy
         </a>
+        <a href="start.html">Start</a>
         <a href="docs.html">Docs</a>
         <a href="security.html">Security</a>
         <span class="nav-icons">
@@ -47,11 +48,11 @@
               <span class="pill"><span class="dot amber" aria-hidden="true"></span>Early, not yet independently reviewed</span>
               <h1>Deploy Node products to your own server.<br /><span class="quiet">No dependencies.</span></h1>
               <p class="lead">
-                Set up a server once. Then each product is one command to launch, and every push that passes
-                CI deploys itself. GitHub never holds a key to your server.
+                Set up a server once. Then launch each product with one command, and every push that passes
+                CI deploys it.
               </p>
               <div class="actions">
-                <a class="mdst-button mdst-button--solid" href="docs.html">Read the docs</a>
+                <a class="mdst-button mdst-button--solid" href="start.html">Get started</a>
                 <a class="mdst-button" href="https://github.com/thisismodest/modest-deploy">View on GitHub</a>
               </div>
             </div>
@@ -80,35 +81,33 @@ Gave GitHub the read-only deploy key, and the webhook.
         <ul class="facts" aria-label="In numbers">
           <li><strong>0</strong><span>runtime dependencies</span></li>
           <li><strong>~1,800</strong><span>lines of source</span></li>
-          <li><strong>1</strong><span>command to launch</span></li>
-          <li><strong>0</strong><span>keys to your server in GitHub</span></li>
+          <li><strong>1</strong><span>command per product</span></li>
+          <li><strong>7</strong><span>nights of database copies</span></li>
         </ul>
 
         <section aria-labelledby="why">
           <p class="eyebrow">Approach</p>
-          <h2 id="why">GitHub sends a message, not commands</h2>
+          <h2 id="why">No server key in GitHub</h2>
           <p class="section-lead">
-            Many deploy setups store a key to the server in GitHub, so anyone who gets into the repository or a
-            workflow gets into the server too. modest-deploy turns that around: the server fetches and builds
-            for itself, and GitHub can only tell it that CI passed.
+            Deploying from CI usually means the workflow signs in to the server over SSH, so the key is stored
+            in GitHub. With modest-deploy, GitHub only sends a signed message when CI passes. The server checks
+            it, then fetches and builds the code itself.
           </p>
           <div class="compare">
             <div>
-              <h3>A usual deploy</h3>
+              <h3>Deploying over SSH from CI</h3>
               <ul>
-                <li>An SSH key to the server, stored in GitHub</li>
-                <li>A workflow that logs in and runs commands</li>
-                <li>A container registry, and more tools to trust</li>
-                <li>Products sharing one user</li>
+                <li>A key to the server is stored in GitHub</li>
+                <li>The workflow runs commands on the server</li>
+                <li>Often a container registry as well</li>
               </ul>
             </div>
             <div>
               <h3>modest-deploy</h3>
               <ul>
-                <li>No key to the server anywhere but the server</li>
-                <li>A signed message, checked, that runs nothing</li>
-                <li>Node, git, systemd, and Caddy: already there</li>
-                <li>Each product fenced off from the others</li>
+                <li>No key to the server is stored in GitHub</li>
+                <li>The server decides what runs</li>
+                <li>Uses Node, git, systemd, and Caddy</li>
               </ul>
             </div>
           </div>
@@ -117,12 +116,12 @@ Gave GitHub the read-only deploy key, and the webhook.
         <section aria-labelledby="push">
           <p class="eyebrow">Deploying</p>
           <h2 id="push">What happens when you push</h2>
-          <p class="section-lead">Nothing runs between pushes. When CI passes on main:</p>
+          <p class="section-lead">When CI passes on main:</p>
           <ol class="steps">
-            <li><strong>GitHub sends a signed message</strong><span>Signed with a secret only the server and GitHub know.</span></li>
-            <li><strong>The server checks it</strong><span>The signature, the branch, the workflow, the repository, and that CI passed. Anything else is refused.</span></li>
-            <li><strong>It fetches and builds</strong><span>Only main's newest commit, with its own read-only key; dependencies exactly as the lockfile says, with install scripts off.</span></li>
-            <li><strong>It switches, and checks</strong><span>If the new version doesn't answer, the one before comes back.</span></li>
+            <li><strong>GitHub sends a signed message</strong><span>Signed with a secret that only the server and GitHub have.</span></li>
+            <li><strong>The server checks it</strong><span>It has to be signed, from the product's own repository, for a CI run on main that passed. Anything else is ignored.</span></li>
+            <li><strong>It fetches and builds</strong><span>Only the newest commit on main, with the product's own read-only key. Dependencies come from the lockfile, with install scripts off.</span></li>
+            <li><strong>It switches over</strong><span>If the new version doesn't respond, the previous one is restored.</span></li>
           </ol>
         </section>
 
@@ -133,32 +132,32 @@ Gave GitHub the read-only deploy key, and the webhook.
             <div>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" /><path d="m8 10 2 2-2 2" /><path d="M12.5 14h3.5" /></svg>
               <h3>One command to launch</h3>
-              <p>Makes the GitHub repository, sets the product up on the server with its domain and HTTPS, and connects the two.</p>
+              <p>Creates the GitHub repository, sets the product up on the server with its domain and HTTPS certificate, and connects the two.</p>
             </div>
             <div>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6L12 3Z" /><path d="m9 12 2.2 2.2L15.5 10" /></svg>
               <h3>Signed deploys</h3>
-              <p>Only a signed message for a passed CI run on main deploys, and only main's newest commit, so an old message sent again can't roll it back.</p>
+              <p>Only the newest commit on main is deployed, so an old message sent again can't roll a product back.</p>
             </div>
             <div>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4.5" width="16" height="15" rx="2.5" /><path d="M4 10h16" /><path d="M9 4.5v5.5" /></svg>
-              <h3>Products fenced off</h3>
-              <p>Each runs as its own user, sandboxed by systemd: read-only code, its own data folder, and none of the server's keys.</p>
+              <h3>A user per product</h3>
+              <p>Each product runs as its own user in a systemd sandbox. It can read its own code and write only to its own data folder.</p>
             </div>
             <div>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 7 4.5 11.5 9 16" /><path d="M5 11.5h9a5 5 0 0 1 0 10h-2" /></svg>
-              <h3>Goes back if it fails</h3>
-              <p>A version that doesn't answer is switched back to the one before, so a bad push doesn't take a product down.</p>
+              <h3>Rollback</h3>
+              <p>If a new version doesn't respond, the previous one is restored.</p>
             </div>
             <div>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5" /><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8" /></svg>
-              <h3>Nightly copies</h3>
-              <p>Every product's SQLite databases are copied each night with SQLite's own backup, safe while they're in use.</p>
+              <h3>Nightly backups</h3>
+              <p>Each product's SQLite databases are copied every night with SQLite's backup API, and kept for 7 nights.</p>
             </div>
             <div>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="m8.5 12 2.4 2.4 4.6-4.8" /></svg>
-              <h3>Checks the server</h3>
-              <p>Before it does anything, it checks SSH, automatic updates, and what's listening, and says plainly what to fix.</p>
+              <h3>Server checks</h3>
+              <p>Before installing, it checks the SSH settings, automatic updates, and open ports, and tells you what to change.</p>
             </div>
           </div>
 
@@ -170,7 +169,7 @@ Gave GitHub the read-only deploy key, and the webhook.
 == a signed message for a passed CI run deploys
    <span class="ok">ok:</span> shop v1 is running, with modest-auth installed from npm
 == each product is sandboxed
-   <span class="ok">ok:</span> it can write its own data, and nothing else it tried
+   <span class="ok">ok:</span> it can write its own data, and nothing else
 == a version that doesn't start is switched back
    <span class="ok">ok:</span> v2 is running again
 
@@ -180,8 +179,8 @@ Gave GitHub the read-only deploy key, and the webhook.
 
         <section aria-labelledby="where">
           <p class="eyebrow">Compatibility</p>
-          <h2 id="where">Runs on Ubuntu, with systemd and Caddy</h2>
-          <p class="section-lead">On one server you've set up, with products written for Node 24 or later.</p>
+          <h2 id="where">Runs on Ubuntu with systemd and Caddy</h2>
+          <p class="section-lead">Products need Node 24 or later.</p>
           <ul class="pills" aria-label="What it uses">
             <li>Ubuntu 24.04</li>
             <li>systemd</li>
@@ -193,8 +192,9 @@ Gave GitHub the read-only deploy key, and the webhook.
 
         <div class="closing">
           <h2>Getting started</h2>
-          <p>It's an early release, and hasn't been independently reviewed. Install it from npm or GitHub: the docs show how.</p>
+          <p>This is an early release, and it hasn't had an independent security review yet.</p>
           <div class="actions">
+            <a class="mdst-button" href="start.html">Step by step</a>
             <a class="mdst-button" href="docs.html">Read the docs</a>
             <a class="mdst-button mdst-button--borderless" href="security.html">Security</a>
           </div>

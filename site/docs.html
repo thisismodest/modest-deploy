@@ -32,6 +32,7 @@
           <svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><rect x="1.5" y="1.5" width="21" height="21" rx="6" fill="#151515" /><rect x="6" y="6.5" width="12" height="4.6" rx="1.3" fill="#fff" /><rect x="6" y="12.9" width="12" height="4.6" rx="1.3" fill="#fff" /><circle cx="8.6" cy="8.8" r="0.85" fill="#151515" /><circle cx="8.6" cy="15.2" r="0.85" fill="#151515" /></svg>
           modest-deploy
         </a>
+        <a href="start.html">Start</a>
         <a href="docs.html" aria-current="page">Docs</a>
         <a href="security.html">Security</a>
         <span class="nav-icons">
@@ -69,8 +70,8 @@
         <section aria-labelledby="before">
           <h2 id="before">Before you install</h2>
           <p>
-            modest-deploy doesn't set the server up: your hosting provider and a few minutes by hand do that
-            better, and <code>modest-deploy check</code> checks the result. On a new Ubuntu server:
+            modest-deploy doesn't set up the server. You do that once, and <code>modest-deploy check</code>
+            checks it. <a href="start.html">Step by step</a> goes through it in detail. On a new Ubuntu server you need:
           </p>
           <ul class="checks">
             <li><strong>Sign in with an SSH key,</strong> added when you make the server, as your own user with <code>sudo</code>. Turn off signing in by password, and as root.</li>
@@ -81,7 +82,7 @@
         </section>
 
         <section aria-labelledby="install">
-          <h2 id="install">Install, once per server</h2>
+          <h2 id="install">Install</h2>
           <div class="window terminal">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
             <pre><code><span class="c">$</span> sudo npm install -g modest-deploy
@@ -97,8 +98,8 @@
           <p>
             <code>check</code> lists what it relies on, each marked <code>ok</code> or with what to fix.
             <code>install</code> runs it first, and won't go on until everything passes (add <code>--anyway</code> if
-            you're sure). Then it adds its own parts: the deploy listener, the deploy service, and the nightly copies.
-            Point the deploy domain's DNS at the server: GitHub's messages arrive there.
+            you're sure). Then it installs the deploy listener, the deploy service, and the nightly backup.
+            Point the deploy domain's DNS at the server. That's where GitHub sends its messages.
           </p>
         </section>
 
