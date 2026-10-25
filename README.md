@@ -1,6 +1,6 @@
 # modest-host
 
-Host your own small Node products on one server: launch each with a command, and
+Deploy small Node products to your own server: launch each with a command, and
 deploy it on every push that passes CI. No dependencies.
 
 > **In development.** Nothing here is ready to use yet. This README describes what

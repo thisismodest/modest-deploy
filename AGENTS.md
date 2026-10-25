@@ -1,6 +1,6 @@
 # modest-host: agent guide
 
-Host small Node products on one server: launch each with a command, deploy on every
+Deploy small Node products to your own server: launch each with a command, deploy on every
 push that passes CI. No dependencies. Read README.md for what it promises, and
 docs/threat-model.md for how.
 

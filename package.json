@@ -2,7 +2,7 @@
   "name": "modest-host",
   "version": "0.0.0",
   "private": true,
-  "description": "Host small Node products on one server: launch each with a command, deploy on every push. No dependencies.",
+  "description": "Deploy small Node products to your own server: launch each with a command, deploy on every push that passes CI. No dependencies.",
   "license": "MIT",
   "author": "Modest Industries Ltd",
   "type": "module",
