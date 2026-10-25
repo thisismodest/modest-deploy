@@ -58,6 +58,8 @@
             <li><a href="#product">What a product does</a></li>
             <li><a href="#deploy">Every push</a></li>
             <li><a href="#commands">Commands</a></li>
+            <li><a href="#update">Updating</a></li>
+            <li><a href="#restore">Restoring a backup</a></li>
             <li><a href="#where">Where things live</a></li>
             <li><a href="#not">What it doesn't do</a></li>
         </ol>
@@ -112,7 +114,7 @@
         <section aria-labelledby="product">
           <h2 id="product">What a product does</h2>
           <ul class="checks">
-            <li><strong>Starts with <code>node server.js</code>,</strong> and listens on <code>process.env.PORT</code> (and <code>process.env.HOST</code>, which is 127.0.0.1).</li>
+            <li><strong>Starts with <code>node server.js</code>,</strong> and listens on <code>process.env.PORT</code>, at <code>process.env.HOST</code> (127.0.0.1). A version listening anywhere else isn't deployed, so nothing reaches it but through Caddy.</li>
             <li><strong>Keeps what it writes in <code>process.env.DATA_DIR</code>.</strong> Everything else is read-only to it.</li>
             <li><strong>Answers <code>GET /</code></strong> once it's ready, with anything but a server error.</li>
             <li><strong>Has a lockfile</strong> (<code>package-lock.json</code>) if it has dependencies.</li>
@@ -133,8 +135,9 @@
             <li>ignores anything unsigned, or not a successful run of CI for a push to <code>main</code> in the product's own repository;</li>
             <li>fetches the repository with the product's own read-only key, and checks GitHub's host key against the ones GitHub publishes;</li>
             <li>deploys only if the commit is still the newest on <code>main</code>, so an old message sent again can't roll it back;</li>
+            <li>refuses a release over 1GB or 200,000 files, or one the disk hasn't room for (it always keeps 1GB free);</li>
             <li>builds the release as a separate user, with dependencies exactly as the lockfile says and install scripts off, then makes it owned by root and readable only by the product;</li>
-            <li>switches to it, restarts the product, and checks it answers within a minute; if it doesn't, the version before comes back.</li>
+            <li>switches to it, restarts the product, and checks it answers within a minute, and only on 127.0.0.1; if not, the version before comes back.</li>
           </ol>
           <p>The last three releases are kept. To deploy again by hand: <code>sudo modest-host deploy &lt;name&gt;</code>.</p>
         </section>
@@ -150,7 +153,7 @@
                 <tr><td><code>launch &lt;name&gt; &lt;domain&gt; --server &lt;s&gt;</code></td><td>Laptop</td><td>Makes the repository, adds the product, and connects them</td></tr>
                 <tr><td><code>add &lt;name&gt; --domain &lt;d&gt; --repo &lt;o/r&gt;</code></td><td>Server</td><td>Adds a product (launch does this for you)</td></tr>
                 <tr><td><code>list</code></td><td>Server</td><td>The products, their domains, and what each is running</td></tr>
-                <tr><td><code>deploy &lt;name&gt;</code></td><td>Server</td><td>Deploys main's newest commit now</td></tr>
+                <tr><td><code>deploy &lt;name&gt;</code></td><td>Server</td><td>Deploys main's newest commit now, whether or not its CI passed</td></tr>
                 <tr><td><code>restart &lt;name&gt;</code></td><td>Server</td><td>Restarts a product, after changing its keys</td></tr>
                 <tr><td><code>logs &lt;name&gt;</code></td><td>Server</td><td>A product's latest log lines</td></tr>
                 <tr><td><code>backup</code></td><td>Server</td><td>Copies every product's databases now (it runs nightly anyway)</td></tr>
@@ -158,7 +161,29 @@
               </tbody>
             </table>
           </div>
-          <p>On the server, run them with <code>sudo</code>.</p>
+          <p>On the server, run them with <code>sudo</code>. Add <code>--anyway</code> to <code>install</code> or <code>add</code> to go on when <code>check</code> finds something to fix.</p>
+        </section>
+
+        <section aria-labelledby="update">
+          <h2 id="update">Updating</h2>
+          <div class="window terminal">
+            <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
+            <pre><code><span class="c">$</span> sudo npm install -g modest-host@latest
+<span class="c">$</span> sudo modest-host install</code></pre>
+          </div>
+          <p>Running <code>install</code> again rewrites every unit it made, the products' included, so they use the new version, and restarts them.</p>
+        </section>
+
+        <section aria-labelledby="restore">
+          <h2 id="restore">Restoring a backup</h2>
+          <p>Stop the product, put the copy back as the product's own, remove SQLite's <code>-wal</code> and <code>-shm</code> files (they belong to the database being replaced), and start it:</p>
+          <div class="window terminal">
+            <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
+            <pre><code><span class="c">$</span> sudo systemctl stop modest-host-shop
+<span class="c">$</span> sudo install -o mh-shop -g mh-shop -m 600 /var/backups/modest-host/shop/2026-10-25/app.db /var/lib/modest-host/shop/app.db
+<span class="c">$</span> sudo rm -f /var/lib/modest-host/shop/app.db-wal /var/lib/modest-host/shop/app.db-shm
+<span class="c">$</span> sudo systemctl start modest-host-shop</code></pre>
+          </div>
         </section>
 
         <section aria-labelledby="where">
