@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://thisismodest.github.io/modest-host/sitemap.xml
+Sitemap: https://thisismodest.com/modest-host/sitemap.xml
