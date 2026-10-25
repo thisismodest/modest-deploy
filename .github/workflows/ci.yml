@@ -1,0 +1,45 @@
+# Every push and pull request: types, tests, the build, and the promises CI can
+# check by itself: no runtime dependencies, only Node's own modules imported, no
+# invisible or direction-changing characters in code, and nothing private (an
+# address, a key, or a token) committed.
+# Actions are pinned to exact commits (their version in the comment), so a moved
+# tag can't change what runs here.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Both supported long-term releases (24 is the oldest, as in package.json's
+        # engines), and the latest, to hear early of anything a new one breaks.
+        node: ["24", "26", "node"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: No dependencies, only Node's own modules, no hidden characters, and nothing private
+        run: npm run rules
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build

@@ -1,0 +1,48 @@
+{
+  "name": "modest-host",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Host small Node products on one server: launch each with a command, deploy on every push. No dependencies.",
+  "license": "MIT",
+  "author": "Modest Industries Ltd",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "modest-host": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "deploy",
+    "hosting",
+    "systemd",
+    "caddy",
+    "webhook",
+    "zero-dependency"
+  ],
+  "scripts": {
+    "test": "node --test \"src/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "check": "npm run rules && npm run typecheck && npm test && npm run build",
+    "prepublishOnly": "npm run check",
+    "rules": "node scripts/check-rules.ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thisismodest/modest-host.git"
+  },
+  "bugs": {
+    "url": "https://github.com/thisismodest/modest-host/issues"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^7.0.2"
+  }
+}

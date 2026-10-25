@@ -1,0 +1,27 @@
+# Updates for the development tools and the GitHub Actions (there are no runtime
+# dependencies to update). Weekly, grouped, each still has to pass CI, and none
+# for a version less than a week old: a compromised release is usually caught
+# and pulled within days.
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      development:
+        patterns: ["*"]
+    # The types describe the oldest Node it supports (24, as in "engines"), so code
+    # can't use anything newer without the type check noticing.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
