@@ -82,12 +82,15 @@
               <tbody>
                 <tr><td>A forged deploy message</td><td>Each product has its own secret; every message must carry a valid HMAC-SHA256 signature of its exact body, compared in constant time</td></tr>
                 <tr><td>A message for anything but a passed CI run on main</td><td>Only a finished, successful run of the product's CI workflow, for a push to main, in its own repository, deploys</td></tr>
-                <tr><td>An old message sent again</td><td>The commit must still be the newest on main when it's fetched</td></tr>
+                <tr><td>An old message sent again</td><td>Only main's newest commit is ever deployed, and a commit that failed isn't tried again by a message, only by hand</td></tr>
                 <tr><td>A message that names something to run</td><td>The listener runs nothing: it leaves a request holding a known product's name and a commit checked to be 40 hex characters</td></tr>
                 <tr><td>Someone in GitHub, the repository, or a workflow</td><td>GitHub holds no key to the server, only the webhook secret, which no workflow can read</td></tr>
                 <tr><td>A server pretending to be GitHub</td><td>GitHub's host keys are fetched from GitHub's API over HTTPS at install; nothing is trusted on first use</td></tr>
                 <tr><td>A product reaching another, or the server</td><td>Its own user; a read-only system and code; private <code>/tmp</code>; no new privileges; other users' processes hidden; the server's keys out of reach; write access to its own data only</td></tr>
                 <tr><td>A package's install script</td><td>Dependencies installed exactly as the lockfile says, with install scripts off, by a separate user</td></tr>
+                <tr><td>A repository's own npm or git settings</td><td>Its <code>.npmrc</code> is removed before npm runs, and npm's and git's settings are pinned, so nothing it carries chooses what runs</td></tr>
+                <tr><td>A build reaching another product</td><td>Each product has its own build user, which alone can read its deploy key and its copy of the repository</td></tr>
+                <tr><td>A commit filling the shared disk</td><td>Releases over 1GB or 200,000 files refused, sizes counted before anything is written, and 1GB always kept free</td></tr>
                 <tr><td>A bad deploy</td><td>The product is checked once started, and the version before comes back if it doesn't answer</td></tr>
                 <tr><td>An unsafe server</td><td><code>check</code> looks at SSH, automatic updates, and what's listening, and install and add refuse until it's fixed</td></tr>
                 <tr><td>A key committed to this public repository</td><td>CI fails on IP addresses, private keys, and tokens</td></tr>
@@ -102,7 +105,8 @@
           <ul class="checks not">
             <li><strong>The server is only as safe as its setup.</strong> modest-host checks the main points, but can't see everything, such as a provider's firewall.</li>
             <li><strong>Products trust their dependencies.</strong> Install scripts are off, but a compromised package still runs when the product does, inside its sandbox.</li>
-            <li><strong>A product that's been broken into could listen on another's port</strong> while that one restarts. systemd can stop this, but Ubuntu's systemd is built without the part it needs. Products on Unix sockets are on the roadmap.</li>
+            <li><strong>A product that's been broken into could listen on another port,</strong> to the outside or on another product's port while that one restarts. systemd can stop this, but Ubuntu's systemd is built without the part it needs. The firewall from "Before you install" blocks the outside, and <code>check</code> and the nightly run report it; products on Unix sockets are on the roadmap.</li>
+            <li><strong>A fetch isn't limited in size,</strong> so someone who can push to a product's main could fill the disk as it's fetched. Deploys stop once less than 1GB is free.</li>
             <li><strong>The deploy service runs as root,</strong> to own releases and restart products. It runs git and npm as a separate user, and takes only a checked name and commit from a request.</li>
           </ul>
         </section>
