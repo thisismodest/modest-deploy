@@ -67,4 +67,5 @@ named for what they do; data in plain objects. Tests use `node:test` and
 
 ## Status
 
-In development, and `"private": true` in package.json until it's ready to publish.
+Early: 0.1.0 is the first release. Published to npm by the release workflow from a
+version tag (see docs/maintaining.md); servers can also run it from a clone.

@@ -49,3 +49,9 @@ install" in the README), and the products themselves. Reports of setup mistakes
 - Every security property has a test, which must pass before anything is merged.
 - GitHub Actions are pinned to exact commits.
 - OpenSSF Scorecard grades the project's practices weekly.
+- Releases are published to npm only by the release workflow, from a version tag on
+  `main`, after every check, using npm's trusted publishing (no token is stored), with
+  provenance linking each one to the commit and build that made it. Only the
+  maintainer can create release tags, and `main` can't be force-pushed. (The first
+  release, 0.1.0, is published by hand, without provenance: see docs/maintaining.md.)
+- An end-to-end test runs it on Ubuntu with systemd on every change.

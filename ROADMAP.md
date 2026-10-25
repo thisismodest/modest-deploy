@@ -23,7 +23,7 @@ it brings. Nothing here is a promise of a date.
 ## Before 1.0
 
 - [ ] Used for real: several products on one server, for a while
-- [ ] Versions tagged on `main`, so a server can be kept on a known one
+- [ ] Published to npm with provenance, from a tag on `main`
 - [ ] An independent review of the listener and the deploy
 - [ ] The commands settled: from 1.0, breaking changes only in major versions
 

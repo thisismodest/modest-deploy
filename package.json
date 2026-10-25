@@ -1,7 +1,6 @@
 {
   "name": "modest-host",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "Deploy small Node products to your own server: launch each with a command, deploy on every push that passes CI. No dependencies.",
   "license": "MIT",
   "author": "Modest Industries Ltd",
@@ -34,6 +33,14 @@
     "prepublishOnly": "npm run check",
     "rules": "node scripts/check-rules.ts"
   },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^7.0.2"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/thisismodest/modest-host.git"
@@ -41,8 +48,5 @@
   "bugs": {
     "url": "https://github.com/thisismodest/modest-host/issues"
   },
-  "devDependencies": {
-    "@types/node": "^24.19.2",
-    "typescript": "^7.0.2"
-  }
+  "homepage": "https://thisismodest.com/modest-host/"
 }

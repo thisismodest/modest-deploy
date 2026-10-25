@@ -3,8 +3,9 @@
 Deploy small Node products to your own server: launch each with a command, and
 deploy it on every push that passes CI. No dependencies.
 
-> **In development.** Nothing here is ready to use yet. This README describes what
-> it's being built to do.
+> **An early release.** It's tested end to end on Ubuntu with systemd, and has had
+> internal adversarial review, but not an independent one, and it hasn't yet run on a
+> real server for long. Try it on a server you can rebuild.
 
 ## Why
 
@@ -92,23 +93,28 @@ Ubuntu server:
 
 ## Installing
 
-On the server, from this repository: Node runs it as it is, with nothing to build or
-install.
+On the server, from npm:
 
 ```sh
-sudo git clone https://github.com/thisismodest/modest-host.git /opt/modest-host
-sudo ln -s /opt/modest-host/src/cli.ts /usr/local/bin/modest-host
+sudo npm install -g modest-host
 sudo modest-host check
 sudo modest-host install --domain deploy.example.org
 ```
 
+Or from this repository, which Node runs as it is, with nothing to build:
+
+```sh
+sudo git clone https://github.com/thisismodest/modest-host.git /opt/modest-host
+sudo ln -s /opt/modest-host/src/cli.ts /usr/local/bin/modest-host
+```
+
 Then point the deploy domain's DNS at the server: GitHub's messages arrive there. For
-`launch`, clone it on your laptop too, and link it the same way.
+`launch`, install it on your laptop too, the same way.
 
 ## Updating modest-host
 
 ```sh
-sudo git -C /opt/modest-host pull
+sudo npm install -g modest-host@latest     # or: sudo git -C /opt/modest-host pull
 sudo modest-host install
 ```
 

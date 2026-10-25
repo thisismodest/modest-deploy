@@ -15,7 +15,7 @@ import { enqueue, takeOne } from "./queue.ts";
 import { must, run } from "./run.ts";
 import { add, backup, copyDatabase, install, list, remove, type Server } from "./server.ts";
 
-const USAGE = `modest-host: host small Node products on one server.
+const USAGE = `modest-host: deploy small Node products to your own server.
 
 On the server (with sudo):
   check                                         check the server is set up safely

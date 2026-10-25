@@ -6,7 +6,10 @@ Every change that affects how it's used, or what it promises. The format follows
 
 ## Unreleased
 
-Nothing released yet. Built so far:
+## [0.1.0] - 2026-10-25
+
+The first release: set a server up once, launch products onto it with one command,
+and deploy each on every push that passes CI.
 
 - `check`, `install`, `add`, `remove`, `list`, `deploy`, `restart`, `logs`, and
   `backup` on the server, and `launch` from a laptop.
