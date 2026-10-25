@@ -1,7 +1,7 @@
 {
   "name": "modest-deploy",
   "version": "0.1.0",
-  "description": "Deploy small Node products to your own server: launch each with a command, deploy on every push that passes CI. No dependencies.",
+  "description": "Zero-dependency deployment for Node, on your own server: launch each product with a command, and deploy on every push that passes CI.",
   "license": "MIT",
   "author": "Modest Industries Ltd",
   "type": "module",

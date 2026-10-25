@@ -1,7 +1,7 @@
 # modest-deploy
 
-Deploy small Node products to your own server: launch each with a command, and
-deploy it on every push that passes CI. No dependencies.
+Zero-dependency deployment for Node, on your own server: launch each product with a
+command, and deploy it on every push that passes CI.
 
 > **An early release.** It's tested end to end on Ubuntu with systemd, and has had
 > internal adversarial review, but not an independent one, and it hasn't yet run on a
