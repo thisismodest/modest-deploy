@@ -69,7 +69,15 @@ function asBuilder(deps: Deps, product: Product) {
     HOME: paths.buildHome,
     LANG: "C.UTF-8",
     GIT_TERMINAL_PROMPT: "0",
+    // git and npm read only these settings: nothing the repository carries (an .npmrc that names
+    // another program as git, say) can change what they run.
     GIT_CONFIG_NOSYSTEM: "1",
+    GIT_CONFIG_GLOBAL: "/dev/null",
+    npm_config_userconfig: "/dev/null",
+    npm_config_globalconfig: "/dev/null",
+    npm_config_git: "git",
+    npm_config_ignore_scripts: "true",
+    npm_config_registry: "https://registry.npmjs.org/",
     // Its own read-only key, and GitHub's host keys as published (never trusted on first use).
     GIT_SSH_COMMAND: `ssh -i ${paths.key(product.name)} -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${paths.knownHosts}`,
     npm_config_cache: join(paths.buildHome, "npm-cache"),
@@ -151,6 +159,8 @@ async function build(deps: Deps, product: Product, commit: string): Promise<void
     if (dependencies.length) {
       if (!(await exists(join(staging, "package-lock.json"))))
         throw new Error("it has dependencies but no package-lock.json: commit one, so what's installed is exactly what was tested");
+      // A project's own .npmrc could still set what the environment doesn't: it's never read.
+      await rm(join(staging, ".npmrc"), { force: true });
       await builder(join(dirname(process.execPath), "npm"), ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel=error"], staging);
     }
     // From here, nobody can change it: root owns it, and only the product's own user can read it.

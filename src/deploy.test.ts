@@ -176,3 +176,29 @@ test("a version that listens beyond this machine is switched back: it must liste
     await assert.rejects(deploy(deps, PRODUCT, second), /listens beyond this machine.*running again/);
     assert.equal(await running(paths, "shop"), commits[0]);
   }));
+
+test("a repository's .npmrc is never read by npm, and npm's and git's settings are pinned, so nothing it carries can choose what runs", () =>
+  onServer(async (paths) => {
+    const { deps, remote } = await setUp(paths, ["one"]);
+    execFileSync("sh", [
+      "-c",
+      `cd "$1" && echo 'git=./payload.sh' > .npmrc && echo '{"dependencies":{"x":"1.0.0"}}' > package.json && echo '{}' > package-lock.json && git add -A && git commit -qm npmrc`,
+      "sh",
+      remote,
+    ]);
+    let seen: { npmrc: boolean; env?: Record<string, string> | undefined } | undefined;
+    const inner = deps.run;
+    deps.run = async (program, args, options = {}) => {
+      if (program.endsWith("/npm")) {
+        seen = { npmrc: execFileSync("ls", ["-A", options.cwd ?? "."], { encoding: "utf8" }).includes(".npmrc"), env: options.env };
+        return { code: 0, stdout: "", stderr: "" };
+      }
+      return inner(program, args, options);
+    };
+    await deploy(deps, PRODUCT, "tip");
+    assert.equal(seen?.npmrc, false, "the .npmrc was gone before npm ran");
+    assert.equal(seen?.env?.npm_config_git, "git");
+    assert.equal(seen?.env?.npm_config_ignore_scripts, "true");
+    assert.equal(seen?.env?.npm_config_userconfig, "/dev/null");
+    assert.equal(seen?.env?.GIT_CONFIG_GLOBAL, "/dev/null");
+  }));
