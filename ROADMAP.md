@@ -12,7 +12,7 @@ it brings. Nothing here is a promise of a date.
 - [x] Each product sandboxed by systemd, with its own users, and Caddy in front
 - [x] `check`, `install`, `add`, `launch`, `deploy`, `restart`, `logs`, `backup`,
       `list`, and `remove`
-- [x] Tested end to end on Ubuntu 24.04 with systemd, in a container
+- [x] Tested end to end on Ubuntu 26.04 with systemd, in a container
 - [x] Internal adversarial review: rounds by AI reviewers each given one angle (the
       webhook and listener, escaping a product, injection and launch, operator
       mistakes, a lead auditor, and verification of each round's fixes), and their
@@ -30,8 +30,8 @@ it brings. Nothing here is a promise of a date.
 ## Later, maybe
 
 - **Products on Unix sockets,** reachable only by their own user and Caddy, so a
-  product that's been broken into can't take another's port while it restarts
-  (Ubuntu's systemd can't stop that otherwise).
+  product that's been broken into can't take another's port on systems whose systemd
+  can't stop it (such as Ubuntu 24.04; 26.04's can).
 
 - **Moving a product to a server of its own,** with its data.
 - **Other Linux distributions** with systemd, once Ubuntu is solid.

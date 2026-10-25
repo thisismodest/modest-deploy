@@ -171,14 +171,15 @@ assert.equal(readdirSync("/var/spool/modest-deploy/requests").length, 0);
 ok("refused");
 
 step("each product is sandboxed");
+const withBpf = sh("systemctl", ["--version"]).includes("+BPF_FRAMEWORK");
 const probe = JSON.parse(await answer(ports.shop, "/probe?other=blog")) as Record<string, string>;
 console.log(probe);
 for (const [what, result] of Object.entries(probe)) {
   if (what === "write its own data") assert.equal(result, "allowed", what);
-  // A known limit: Ubuntu's systemd is built without the BPF framework, so SocketBindDeny has no effect there.
-  else if (what !== "listen on another port") assert.notEqual(result, "allowed", what);
+  // SocketBindDeny needs systemd built with its BPF framework: Ubuntu 26.04's is, 24.04's isn't.
+  else if (what !== "listen on another port" || withBpf) assert.notEqual(result, "allowed", what);
 }
-ok("it can write its own data, and nothing else it tried (but another port: see the threat model's known limits)");
+ok(withBpf ? "it can write its own data, and nothing else, not even listen on another port" : "it can write its own data, and nothing else it tried (but another port: see the threat model's known limits)");
 
 step("each product's build user reaches only its own key and source");
 for (const path of ["/etc/modest-deploy/keys/blog", "/srv/modest-deploy/blog/source.git/HEAD", "/etc/modest-deploy/secrets/blog"]) {

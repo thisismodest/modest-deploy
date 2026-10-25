@@ -87,6 +87,7 @@
                 <tr><td>A message that names something to run</td><td>The listener runs nothing: it leaves a request holding a known product's name and a commit checked to be 40 hex characters</td></tr>
                 <tr><td>Someone in GitHub, the repository, or a workflow</td><td>GitHub holds no key to the server, only the webhook secret, which no workflow can read</td></tr>
                 <tr><td>A server pretending to be GitHub</td><td>GitHub's host keys are fetched from GitHub's API over HTTPS at install; nothing is trusted on first use</td></tr>
+                <tr><td>A product taking another port</td><td>Each product can listen only on its own port (on Ubuntu 26.04, tested end to end)</td></tr>
                 <tr><td>A product reaching another, or the server</td><td>Its own user; a read-only system and code; private <code>/tmp</code>; no new privileges; other users' processes hidden; the server's keys out of reach; write access to its own data only</td></tr>
                 <tr><td>A package's install script</td><td>Dependencies installed exactly as the lockfile says, with install scripts off, by a separate user</td></tr>
                 <tr><td>A repository's own npm or git settings</td><td>Its <code>.npmrc</code> is removed before npm runs, and npm's and git's settings are pinned, so nothing it carries chooses what runs</td></tr>
@@ -107,7 +108,7 @@
           <ul class="checks not">
             <li><strong>The server is only as safe as its setup.</strong> modest-deploy checks the main points, but can't see everything, such as a provider's firewall.</li>
             <li><strong>Products trust their dependencies.</strong> Install scripts are off, but a compromised package still runs when the product does, inside its sandbox.</li>
-            <li><strong>A product that's been broken into could listen on another port,</strong> to the outside or on another product's port while that one restarts. systemd can stop this, but Ubuntu's systemd is built without the part it needs. The firewall from "Before you install" blocks the outside, and <code>check</code> and the nightly run report it; products on Unix sockets are on the roadmap.</li>
+            <li><strong>On Ubuntu 24.04, a product that's been broken into could listen on another port,</strong> to the outside or on another product's port while that one restarts. modest-deploy lets each product listen only on its own port, but that needs a systemd built with its BPF framework: Ubuntu 26.04's is, 24.04's isn't. On 24.04, the firewall blocks the outside, and <code>check</code> and the nightly run report it.</li>
             <li><strong>A fetch isn't limited in size,</strong> so someone who can push to a product's main could fill the disk as it's fetched. Deploys stop once less than 1GB is free.</li>
             <li><strong>The deploy service runs as root,</strong> to own releases and restart products. It runs git and npm as a separate user, and takes only a checked name and commit from a request.</li>
           </ul>

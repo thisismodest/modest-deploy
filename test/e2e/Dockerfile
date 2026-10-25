@@ -1,6 +1,6 @@
 # A fresh Ubuntu server, set up as "Before you install" in the README says, with
 # systemd running, for the end-to-end test. A git user and sshd stand in for GitHub.
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
