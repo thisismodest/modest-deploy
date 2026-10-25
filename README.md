@@ -82,7 +82,8 @@ A product is a Node app in a GitHub repository that:
 
 modest-deploy doesn't set up the server itself: your hosting provider and a few
 minutes by hand do it better, and `modest-deploy check` checks the result. On a new
-Ubuntu 26.04 server (24.04 works too, with one more limit: see the threat model):
+Ubuntu 26.04 LTS server (24.04 LTS works too, but there a product that's been broken
+into could listen on other ports: see the threat model's known limits):
 
 - sign in with an SSH key (add it when creating the server), with password sign-in
   and root sign-in turned off;

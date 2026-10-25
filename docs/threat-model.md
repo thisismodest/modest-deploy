@@ -61,12 +61,12 @@ marked as built (with its test) or planned.
   package still runs when the product does, inside that product's sandbox.
 - **Anyone with a product's webhook secret** can ask for that product to be deployed
   again, at its current commit on `main`. Nothing more.
-- **On Ubuntu 24.04, a product that's been broken into could listen on another port:**
+- **On Ubuntu 24.04 LTS, a product that's been broken into could listen on another port:**
   to the outside, or on another product's port while that one restarts, and so answer
   its visitors. modest-deploy lets each product listen only on its own port
   (systemd's `SocketBindDeny`), but that needs systemd built with its BPF framework:
-  Ubuntu 26.04's is, and the end-to-end test checks it holds there; 24.04's isn't. On
-  24.04, the firewall from "Before you install" blocks the outside, and `check` and the
+  Ubuntu 26.04 LTS's is, and the end-to-end test checks it holds there; 24.04 LTS's isn't.
+  On 24.04 LTS, the firewall from "Before you install" blocks the outside, and `check` and the
   nightly run report it.
 - **The deploy service runs as root,** because it makes each release owned by root
   and restarts products. It runs git and npm as the build user, with install scripts
