@@ -118,6 +118,11 @@
             <li><strong>Tells you what's left:</strong> point the domain's DNS at the server, and push.</li>
           </ol>
           <p>On the server, <code>modest-deploy add</code> does the second step alone, and prints what to add on GitHub by hand.</p>
+          <p>
+            Add <code>--redirect www.shop.example.org</code> (or several, separated by commas) for domains that send visitors to the
+            product's own, at the same path. They never reach the product, and no domain can be used by two products. Run
+            <code>add</code> again on the server to change them.
+          </p>
         </section>
 
         <section aria-labelledby="product">
@@ -160,7 +165,7 @@
                 <tr><td><code>check</code></td><td>Server</td><td>Checks the server is set up safely, and says what to fix</td></tr>
                 <tr><td><code>install --domain &lt;d&gt;</code></td><td>Server</td><td>Installs modest-deploy's own parts, once</td></tr>
                 <tr><td><code>launch &lt;name&gt; &lt;domain&gt; --server &lt;s&gt;</code></td><td>Laptop</td><td>Makes the repository, adds the product, and connects them</td></tr>
-                <tr><td><code>add &lt;name&gt; --domain &lt;d&gt; --repo &lt;o/r&gt;</code></td><td>Server</td><td>Adds a product (launch does this for you)</td></tr>
+                <tr><td><code>add &lt;name&gt; --domain &lt;d&gt; --repo &lt;o/r&gt; [--redirect &lt;d,...&gt;]</code></td><td>Server</td><td>Adds a product (launch does this for you); again to change its redirects</td></tr>
                 <tr><td><code>list</code></td><td>Server</td><td>The products, their domains, and what each is running</td></tr>
                 <tr><td><code>deploy &lt;name&gt;</code></td><td>Server</td><td>Deploys main's newest commit now, whether or not its CI passed</td></tr>
                 <tr><td><code>restart &lt;name&gt;</code></td><td>Server</td><td>Restarts a product, after changing its keys</td></tr>

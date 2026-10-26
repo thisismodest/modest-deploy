@@ -4,12 +4,14 @@
 // secret goes to GitHub on standard input, never in a command line.
 
 import { isDomain, isName, isRepo } from "./names.ts";
+import { areRedirects, MOST_REDIRECTS } from "./products.ts";
 import { must, type Run } from "./run.ts";
 import type { Added } from "./server.ts";
 
 export type Launch = {
   name: string;
   domain: string;
+  redirects?: string[] | undefined;
   server: string;
   repo?: string | undefined;
   template?: string | undefined;
@@ -21,9 +23,11 @@ export const isServer = (value: unknown): value is string =>
   typeof value === "string" && /^(?:[a-z_][a-z0-9_-]{0,31}@)?[A-Za-z0-9][A-Za-z0-9.-]{0,252}$/.test(value);
 
 export async function launch(run: Run, options: Launch, log: (line: string) => void): Promise<void> {
-  const { name, domain, server } = options;
+  const { name, domain, server, redirects = [] } = options;
   if (!isName(name)) throw new Error("the name must be 2 to 29 lowercase letters, digits, and single hyphens, starting with a letter");
   if (!isDomain(domain)) throw new Error("the domain must be a domain, such as shop.example.org");
+  if (!areRedirects(redirects, domain))
+    throw new Error(`the redirects must be up to ${MOST_REDIRECTS} domains, each once, other than the product's own, such as www.shop.example.org`);
   if (!isServer(server)) throw new Error("the server must be a host from your SSH config, or user@host");
   if (options.template !== undefined && !isRepo(options.template)) throw new Error("the template must be a repository, as owner/name");
   const env = {
@@ -46,7 +50,11 @@ export async function launch(run: Run, options: Launch, log: (line: string) => v
   const answer = await must(
     run,
     "ssh",
-    ["-o", "BatchMode=yes", "--", server, "sudo", "modest-deploy", "add", name, "--domain", domain, "--repo", repo, "--json"],
+    [
+      ...["-o", "BatchMode=yes", "--", server, "sudo", "modest-deploy", "add", name, "--domain", domain, "--repo", repo],
+      ...(redirects.length ? ["--redirect", redirects.join(",")] : []),
+      "--json",
+    ],
     { env, timeout: 120_000 },
   );
   // The JSON is the last line: check's report comes before it. Each part is checked
@@ -94,6 +102,6 @@ export async function launch(run: Run, options: Launch, log: (line: string) => v
   log(`Gave GitHub the server's read-only deploy key, and the webhook to ${webhook}.`);
   log("");
   log("Left to do:");
-  log(`  1. Point ${domain}'s DNS at the server (an A record, and AAAA if it has IPv6).`);
+  log(`  1. Point the DNS of ${[domain, ...redirects].join(", ")} at the server (an A record each, and AAAA if it has IPv6).`);
   log(`  2. Push to main, with a CI workflow at .github/workflows/ci.yml. Once it passes, it's live at https://${domain}.`);
 }

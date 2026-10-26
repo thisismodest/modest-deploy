@@ -46,6 +46,11 @@ while a check fails, unless you add `--anyway`.
   deploys it;
 - tells you what's left: pointing the domain's DNS at the server.
 
+Add `--redirect www.example.org` (or several, separated by commas) for domains that
+should send visitors to the product's own, at the same path: such as `www.`, or an
+old name. They never reach the product, and no domain can be used by two products.
+Run `add` again on the server to change them.
+
 **Deploy, on every push to `main` that passes CI.** GitHub sends a signed
 "workflow finished" message. The server:
 

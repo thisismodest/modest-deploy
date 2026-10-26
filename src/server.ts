@@ -10,7 +10,7 @@ import { checkServer, report } from "./check.ts";
 import { answersWithin, running } from "./deploy.ts";
 import { isDomain, isName, isRepo } from "./names.ts";
 import { buildUser, type Layout, LISTENER_USER, productUnit, productUser } from "./paths.ts";
-import { freePort, listProducts, type Product, readHost, readProduct, saveProduct, writeWhole } from "./products.ts";
+import { areRedirects, freePort, listProducts, MOST_REDIRECTS, type Product, readHost, readProduct, saveProduct, takenDomain, writeWhole } from "./products.ts";
 import { must, type Run } from "./run.ts";
 import { BACKUP_TIMER, backupService, caddyImport, deployPath, deployService, hostSite, listenerService, productService, productSite } from "./units.ts";
 
@@ -177,16 +177,19 @@ export async function install(server: Server, given: string | undefined, anyway 
   }
 }
 
-export type Added = { name: string; domain: string; repo: string; webhook: string; secret: string; deployKey: string };
+export type Added = { name: string; domain: string; redirects: string[]; repo: string; webhook: string; secret: string; deployKey: string };
 
 /**
  * Adds a product. Caddy is asked first, and the settings saved last, so a failure
  * part way leaves nothing that stops it being run again. Run again for a product
- * already added (the same domain and repository), it gives the same secret and key.
+ * already added (the same domain and repository), it gives the same secret and key, and
+ * its redirects become the ones given.
  */
-export async function add(server: Server, name: string, domain: string, repo: string, anyway = false): Promise<Added> {
+export async function add(server: Server, name: string, domain: string, repo: string, anyway = false, redirects: string[] = []): Promise<Added> {
   if (!isName(name)) throw new Error("the name must be 2 to 29 lowercase letters, digits, and single hyphens, starting with a letter");
   if (!isDomain(domain)) throw new Error("the domain must be a domain, such as shop.example.org");
+  if (!areRedirects(redirects, domain))
+    throw new Error(`the redirects must be up to ${MOST_REDIRECTS} domains, each once, other than the product's own, such as www.shop.example.org`);
   if (!isRepo(repo)) throw new Error("the repository must be owner/name, as on GitHub");
   await checked(server, anyway);
   const { paths, run, node } = server;
@@ -196,15 +199,19 @@ export async function add(server: Server, name: string, domain: string, repo: st
     throw new Error(`there's already a product called ${name}, for ${existing.domain} and ${existing.repo}`);
   }
   const others = (await listProducts(paths)).filter((p) => p.name !== name);
-  if (domain === host.domain || others.some((p) => p.domain === domain)) throw new Error(`${domain} is already in use here`);
-  const product: Product = existing ?? {
-    name,
-    domain,
-    repo,
-    port: freePort(others, await listening(server)),
-    branch: "main",
-    workflow: ".github/workflows/ci.yml",
-  };
+  const taken = takenDomain({ name, domain, redirects }, others, host);
+  if (taken) throw new Error(`${taken} is already in use here`);
+  const product: Product = existing
+    ? { ...existing, redirects }
+    : {
+        name,
+        domain,
+        redirects,
+        repo,
+        port: freePort(others, await listening(server)),
+        branch: "main",
+        workflow: ".github/workflows/ci.yml",
+      };
 
   await caddyWith(server, paths.caddySite(name), productSite(product));
   await systemUser(server, productUser(name));
@@ -241,7 +248,7 @@ export async function add(server: Server, name: string, domain: string, repo: st
   await must(run, "systemctl", ["daemon-reload"]);
   await must(run, "systemctl", ["enable", productUnit(name)]);
   await saveProduct(paths, product);
-  return { name, domain, repo: product.repo, webhook: `https://${host.domain}/deploy/${name}`, secret, deployKey };
+  return { name, domain, redirects, repo: product.repo, webhook: `https://${host.domain}/deploy/${name}`, secret, deployKey };
 }
 
 /** Takes a product off the server, even one whose settings are broken. Its data, keys file, and copies stay, until deleted by hand. */
@@ -275,7 +282,8 @@ export async function list(server: Server): Promise<string[]> {
   for (const p of await listProducts(server.paths)) {
     const state = (await server.run("systemctl", ["is-active", productUnit(p.name)])).stdout.trim() || "unknown";
     const commit = (await running(server.paths, p.name))?.slice(0, 7) ?? "none yet";
-    rows.push(`${p.name}  https://${p.domain}  ${p.repo}  port ${p.port}  ${state}  ${commit}`);
+    const from = p.redirects.length ? ` (from ${p.redirects.join(", ")})` : "";
+    rows.push(`${p.name}  https://${p.domain}${from}  ${p.repo}  port ${p.port}  ${state}  ${commit}`);
   }
   return rows;
 }

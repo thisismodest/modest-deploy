@@ -12,6 +12,7 @@ export const COMMIT = "0123456789abcdef0123456789abcdef01234567";
 export const PRODUCT: Product = {
   name: "shop",
   domain: "shop.example.org",
+  redirects: [],
   repo: "example/shop",
   port: 4100,
   branch: "main",

@@ -226,9 +226,16 @@ assert.match(
   sh("modest-deploy", ["add", "shop", "--domain", "other.example.org", "--repo", "example/shop"], { allowFail: true }),
   /already a product called shop/,
 );
+// Caddy itself checks the redirect's site before it's kept (add validates, then reloads).
+mh("add", "shop", "--domain", "shop.example.org", "--repo", "example/shop", "--redirect", "www.shop.example.org");
+assert.match(readFileSync("/etc/modest-deploy/caddy/shop.caddy", "utf8"), /www\.shop\.example\.org \{\n\tredir https:\/\/shop\.example\.org\{uri\} permanent/);
+assert.match(
+  sh("modest-deploy", ["add", "blog", "--domain", "blog.example.org", "--repo", "example/blog", "--redirect", "www.shop.example.org"], { allowFail: true }),
+  /www\.shop\.example\.org is already in use here/,
+);
 console.log(mh("install"));
 assert.equal(await answer(ports.shop), "shop v2");
-ok("the same secret and key; a different domain refused; install again keeps everything running");
+ok("the same secret and key; a different domain refused; a redirect Caddy accepts, and one already in use refused; install again keeps everything running");
 
 step("list, and remove");
 console.log(mh("list"));

@@ -7,21 +7,37 @@ import { dirname } from "node:path";
 import { isDomain, isName, isPort, isRepo } from "./names.ts";
 import type { Layout } from "./paths.ts";
 
-export type Product = { name: string; domain: string; repo: string; port: number; branch: string; workflow: string };
+/** A product's domain, and the domains that only redirect to it (such as www.), never reaching the product. */
+export type Product = { name: string; domain: string; redirects: string[]; repo: string; port: number; branch: string; workflow: string };
 export type Host = { domain: string };
 
 export const BRANCH = "main";
 export const WORKFLOW = ".github/workflows/ci.yml";
 /** Products' ports are given out from here up. */
 const FIRST_PORT = 4100;
+/** Enough for www. and a few old names: each is a certificate Caddy gets and renews. */
+export const MOST_REDIRECTS = 10;
+
+/** Redirects are domains, each once, none the product's own, and only a few. */
+export const areRedirects = (value: unknown, domain: string): value is string[] =>
+  Array.isArray(value) && value.length <= MOST_REDIRECTS && value.every((r) => isDomain(r) && r !== domain) && new Set(value).size === value.length;
+
+/** A domain of this product's already used here (another product's, or the deploy domain), or null. */
+export function takenDomain(product: Pick<Product, "name" | "domain" | "redirects">, others: Product[], host: Host): string | null {
+  const used = new Set([host.domain, ...others.filter((p) => p.name !== product.name).flatMap((p) => [p.domain, ...p.redirects])]);
+  return [product.domain, ...product.redirects].find((d) => used.has(d)) ?? null;
+}
 
 function checked(value: unknown, name: string): Product {
   const p = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
   if (p.name !== name || !isName(p.name)) throw new Error(`${name}: its settings name another product`);
   if (!isDomain(p.domain)) throw new Error(`${name}: its domain isn't a domain`);
+  // Settings from before redirects have none.
+  const redirects = p.redirects ?? [];
+  if (!areRedirects(redirects, p.domain)) throw new Error(`${name}: its redirects aren't a few domains, other than its own`);
   if (!isRepo(p.repo)) throw new Error(`${name}: its repository isn't owner/name`);
   if (!isPort(p.port)) throw new Error(`${name}: its port isn't one it can use`);
-  return { name, domain: p.domain, repo: p.repo, port: p.port, branch: BRANCH, workflow: WORKFLOW };
+  return { name, domain: p.domain, redirects, repo: p.repo, port: p.port, branch: BRANCH, workflow: WORKFLOW };
 }
 
 /** A product's settings, or null if there's no such product. */
@@ -68,8 +84,8 @@ export async function writeWhole(path: string, text: string, mode = 0o644): Prom
 
 export async function saveProduct(paths: Layout, product: Product): Promise<void> {
   checked(product, product.name);
-  const { name, domain, repo, port } = product;
-  await writeWhole(paths.product(name), `${JSON.stringify({ name, domain, repo, port }, null, 2)}\n`);
+  const { name, domain, redirects, repo, port } = product;
+  await writeWhole(paths.product(name), `${JSON.stringify({ name, domain, redirects, repo, port }, null, 2)}\n`);
 }
 
 /** The first port no product has, and nothing else is listening on. */

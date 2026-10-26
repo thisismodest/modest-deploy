@@ -20,8 +20,8 @@ const USAGE = `modest-deploy: deploy small Node products to your own server.
 On the server (with sudo):
   check                                         check the server is set up safely
   install --domain <deploy-domain>              install modest-deploy's own parts; again after updating it
-  add <name> --domain <domain> --repo <owner/repo> [--json]
-                                                add a product (launch does this for you)
+  add <name> --domain <domain> --repo <owner/repo> [--redirect <domain,...>] [--json]
+                                                add a product (launch does this for you); again to change its redirects
   list                                          the products, and what each is running
   deploy <name>                                 deploy main's newest commit now (whether or not CI passed)
   restart <name>                                restart a product (after changing its keys)
@@ -30,9 +30,10 @@ On the server (with sudo):
   backup                                        copy every product's databases now
 
 On your laptop:
-  launch <name> <domain> --server <ssh-host> [--repo <owner/repo>] [--template <owner/repo>] [--public]
+  launch <name> <domain> --server <ssh-host> [--redirect <domain,...>] [--repo <owner/repo>] [--template <owner/repo>] [--public]
                                                 make the repository, add the product, and connect them
 
+--redirect names domains that send visitors to the product's own, such as www.shop.example.org.
 Add --anyway to install or add to go on when check finds something to fix.`;
 
 /** The words after the command, and its --options. */
@@ -49,7 +50,9 @@ function parse(args: string[]) {
     const value = options.get(key);
     return typeof value === "string" ? value : undefined;
   };
-  return { words, flag: (key: string) => options.get(key) === true, text };
+  /** A comma-separated list, such as --redirect's. */
+  const domains = (key: string) => (text(key) ?? "").split(",").filter(Boolean);
+  return { words, flag: (key: string) => options.get(key) === true, text, domains };
 }
 
 const log = (line: string) => console.log(line);
@@ -69,7 +72,7 @@ const product = (name: string | undefined) => {
 
 async function main(argv: string[]): Promise<void> {
   const [command, ...rest] = argv;
-  const { words, flag, text } = parse(rest);
+  const { words, flag, text, domains } = parse(rest);
   switch (command) {
     case "check": {
       if (!report(await checkServer(run, undefined, realpathSync(process.argv[1] ?? "")))) process.exitCode = 1;
@@ -80,13 +83,13 @@ async function main(argv: string[]): Promise<void> {
       return install(server(), text("domain"), flag("anyway"));
     case "add": {
       asRoot();
-      const added = await add(server(), product(words[0]), text("domain") ?? "", text("repo") ?? "", flag("anyway"));
+      const added = await add(server(), product(words[0]), text("domain") ?? "", text("repo") ?? "", flag("anyway"), domains("redirect"));
       if (flag("json")) return log(JSON.stringify(added));
       log(`Added ${added.name}. In ${added.repo}'s settings on GitHub, add:`);
       log(`  a deploy key (read-only): ${added.deployKey}`);
       log(`  a webhook: ${added.webhook}, content type application/json, the "Workflow runs" event, with this secret:`);
       log(`  ${added.secret}`);
-      log(`Then point ${added.domain}'s DNS at this server. (modest-deploy launch does all of this from your laptop.)`);
+      log(`Then point the DNS of ${[added.domain, ...added.redirects].join(", ")} at this server. (modest-deploy launch does all of this from your laptop.)`);
       return;
     }
     case "list":
@@ -132,6 +135,7 @@ async function main(argv: string[]): Promise<void> {
         {
           name: words[0] ?? "",
           domain: words[1] ?? "",
+          redirects: domains("redirect"),
           server: text("server") ?? "",
           repo: text("repo"),
           template: text("template"),

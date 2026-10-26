@@ -3,7 +3,7 @@
 
 import { isDomain, isName, isPort } from "./names.ts";
 import { type Layout, LISTENER_PORT, LISTENER_USER, productUser } from "./paths.ts";
-import type { Product } from "./products.ts";
+import { areRedirects, type Product } from "./products.ts";
 
 /** What systemd takes away from every service modest-deploy runs: whatever a Node server doesn't need. */
 const SANDBOX = `NoNewPrivileges=yes
@@ -33,7 +33,8 @@ RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 UMask=0077`;
 
 const safe = (product: Product) => {
-  if (!isName(product.name) || !isDomain(product.domain) || !isPort(product.port)) throw new Error("not a product");
+  if (!isName(product.name) || !isDomain(product.domain) || !areRedirects(product.redirects, product.domain) || !isPort(product.port))
+    throw new Error("not a product");
   return product;
 };
 
@@ -176,14 +177,19 @@ Persistent=true
 WantedBy=timers.target
 `;
 
-/** A product's site: HTTPS for its domain (Caddy gets the certificate), passed to its port. */
+/**
+ * A product's site: HTTPS for its domain (Caddy gets the certificate), passed to its port.
+ * Each redirect goes to the same path on that domain, which it names itself, so a request
+ * can't choose where it's sent; and never reaches the product.
+ */
 export function productSite(product: Product): string {
-  const { domain, port } = safe(product);
+  const { domain, redirects, port } = safe(product);
+  const redirect = (from: string) => `\n${from} {\n\tredir https://${domain}{uri} permanent\n}\n`;
   return `# Written by modest-deploy: changes here are replaced.
 ${domain} {
 \treverse_proxy 127.0.0.1:${port}
 }
-`;
+${redirects.map(redirect).join("")}`;
 }
 
 /** The deploy domain: only /deploy/<product> reaches the listener, and only small bodies. */

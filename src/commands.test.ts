@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { PRODUCT } from "../test/helpers.ts";
+import { onServer, PRODUCT } from "../test/helpers.ts";
 import { checkServer, outsidePorts } from "./check.ts";
 import { isServer, launch } from "./launch.ts";
 import { layout } from "./paths.ts";
+import { readProduct, takenDomain, writeWhole } from "./products.ts";
 import type { Ran, Run, RunOptions } from "./run.ts";
 import { hostSite, listenerService, productService, productSite } from "./units.ts";
 
@@ -87,6 +88,50 @@ test("nothing unchecked can reach a unit or a Caddy site, so no value can add a 
   assert.equal(productSite(PRODUCT), "# Written by modest-deploy: changes here are replaced.\nshop.example.org {\n\treverse_proxy 127.0.0.1:4100\n}\n");
 });
 
+test("a redirect sends visitors to the product's own domain, at the same path, and never reaches the product", () => {
+  assert.equal(
+    productSite({ ...PRODUCT, redirects: ["www.shop.example.org"] }),
+    "# Written by modest-deploy: changes here are replaced.\nshop.example.org {\n\treverse_proxy 127.0.0.1:4100\n}\n\nwww.shop.example.org {\n\tredir https://shop.example.org{uri} permanent\n}\n",
+  );
+});
+
+test("no redirect can add a line to a Caddy site, name the product's own domain, or be one of too many", () => {
+  for (const redirects of [
+    ["www.shop.example.org {\n}\nevil.example.org"],
+    ["www.shop.example.org\n\treverse_proxy 127.0.0.1:22"],
+    ["*.example.org"],
+    ["shop.example.org"],
+    ["www.shop.example.org", "www.shop.example.org"],
+    Array.from({ length: 11 }, (_, i) => `r${i}.example.org`),
+  ]) {
+    assert.throws(() => productSite({ ...PRODUCT, redirects }), JSON.stringify(redirects));
+  }
+});
+
+test("a product can't take another's domain or redirect, or the deploy domain, by its own domain or a redirect", () => {
+  const host = { domain: "deploy.example.org" };
+  const other = { ...PRODUCT, name: "blog", domain: "blog.example.org", redirects: ["www.blog.example.org"], port: 4101 };
+  for (const domain of ["blog.example.org", "www.blog.example.org", "deploy.example.org"]) {
+    assert.equal(takenDomain({ ...PRODUCT, redirects: [domain] }, [other], host), domain);
+    assert.equal(takenDomain({ ...PRODUCT, domain, redirects: [] }, [other], host), domain);
+  }
+  // Its own, added again, isn't taken.
+  const shop = { ...PRODUCT, redirects: ["www.shop.example.org"] };
+  assert.equal(takenDomain(shop, [other, shop], host), null);
+});
+
+test("a settings file's redirects are checked when read: one changed by hand can't reach Caddy, and one from before redirects has none", async () => {
+  await onServer(async (paths) => {
+    const { name, domain, repo, port } = PRODUCT;
+    await writeWhole(paths.product(name), JSON.stringify({ name, domain, repo, port }));
+    assert.deepEqual((await readProduct(paths, name))?.redirects, []);
+    for (const redirects of ["www.shop.example.org", ["evil.example.org {\n}"], [domain], [1]]) {
+      await writeWhole(paths.product(name), JSON.stringify({ name, domain, redirects, repo, port }));
+      await assert.rejects(readProduct(paths, name), JSON.stringify(redirects));
+    }
+  });
+});
+
 test("an SSH destination is a host or user@host, never anything a shell or ssh would read as more", () => {
   for (const good of ["myserver", "deploy@203.0.113.7", "ubuntu@host.example.org"]) assert.ok(isServer(good), good);
   for (const bad of ["", "-oProxyCommand=x", "a b", "user@host;id", "host$(id)", "@host", "user@-host", "a\nb"]) assert.ok(!isServer(bad), bad);
@@ -137,6 +182,29 @@ test("launch makes the repository, adds the product over SSH, and gives GitHub t
   assert.ok(lines.some((l) => /DNS/.test(l)));
 });
 
+test("launch gives the server the redirects as one checked word, and asks for each one's DNS", async () => {
+  const calls: { program: string; args: string[] }[] = [];
+  const run: Run = async (program, args) => {
+    calls.push({ program, args });
+    if (program === "ssh")
+      return ok(
+        JSON.stringify({
+          name: "shop",
+          webhook: "https://deploy.example.org/deploy/shop",
+          secret: "c".repeat(64),
+          deployKey: "ssh-ed25519 AAAA modest-deploy shop",
+        }),
+      );
+    if (program === "gh" && args[0] === "api" && args.length === 2) return ok("[]");
+    return ok("{}");
+  };
+  const lines: string[] = [];
+  const redirects = ["www.shop.example.org", "shop.example.com"];
+  await launch(run, { name: "shop", domain: "shop.example.org", redirects, server: "s", repo: "example/shop", visibility: "private" }, (l) => lines.push(l));
+  assert.deepEqual(calls.find((c) => c.program === "ssh")?.args.slice(-3), ["--redirect", "www.shop.example.org,shop.example.com", "--json"]);
+  assert.ok(lines.some((l) => l.includes("shop.example.org, www.shop.example.org, shop.example.com")));
+});
+
 test("launch refuses anything unsafe before running anything", async () => {
   const calls: string[] = [];
   const run: Run = async (program) => {
@@ -148,6 +216,8 @@ test("launch refuses anything unsafe before running anything", async () => {
     { name: "shop", domain: "a.example.org; id", server: "s" },
     { name: "shop", domain: "a.example.org", server: "-oProxyCommand=id" },
     { name: "shop", domain: "a.example.org", server: "s", template: "x;y" },
+    { name: "shop", domain: "a.example.org", server: "s", redirects: ["www.a.example.org;id"] },
+    { name: "shop", domain: "a.example.org", server: "s", redirects: ["a.example.org"] },
   ]) {
     await assert.rejects(launch(run, { ...bad, visibility: "private" }, () => {}));
   }
