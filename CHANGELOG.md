@@ -6,6 +6,10 @@ Every change that affects how it's used, or what it promises. The format follows
 
 ## Unreleased
 
+## [0.2.0] - 2026-10-26
+
+### Added
+
 - `--redirect` on `launch` and `add`: domains, such as `www.`, that send visitors to
   the product's own at the same path, and never reach it. A domain can belong to only
   one product, whether as its own or a redirect.

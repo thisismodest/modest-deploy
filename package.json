@@ -1,6 +1,6 @@
 {
   "name": "modest-deploy",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Zero-dependency deployment for Node, on your own server: launch each product with a command, and deploy on every push that passes CI.",
   "license": "MIT",
   "author": "Modest Industries Ltd",
