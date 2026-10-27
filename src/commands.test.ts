@@ -328,6 +328,22 @@ test("a Match block that allows passwords for one user, or from a private addres
   assert.match(finding?.fix ?? "", /allowed for ann/);
 });
 
+test("a Match block that allows root for one outside address is found, in a file sshd includes, though no sample connection hits it", async () => {
+  const files: Record<string, string> = {
+    "/etc/ssh/sshd_config": "Include sshd_config.d/99-site.conf\nPermitRootLogin no\n",
+    "/etc/ssh/sshd_config.d/99-site.conf": "Match User ann\n  PasswordAuthentication no\nMatch Address 203.0.113.0/24\n  PermitRootLogin=prohibit-password\n",
+  };
+  const run = server({ sshd: ok("passwordauthentication no\nkbdinteractiveauthentication no\npermitrootlogin no\n") });
+  const read = async (path: string) => files[path] ?? Promise.reject(new Error("ENOENT"));
+  const finding = (await checkServer(run, read)).find((f) => f.what.startsWith("SSH: no Match block"));
+  assert.equal(finding?.ok, false);
+  assert.match(finding?.fix ?? "", /PermitRootLogin=prohibit-password \(\/etc\/ssh\/sshd_config\.d\/99-site\.conf\)/);
+  assert.doesNotMatch(finding?.fix ?? "", /PasswordAuthentication/);
+
+  files["/etc/ssh/sshd_config.d/99-site.conf"] = "Match Address 203.0.113.0/24\n  PermitRootLogin no\n";
+  assert.equal((await checkServer(run, read)).find((f) => f.what.startsWith("SSH: no Match block"))?.ok, true);
+});
+
 const CLI = fileURLToPath(new URL("./cli.ts", import.meta.url));
 const cli = (...args: string[]) => spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8", timeout: 20_000 });
 const COMMANDS = ["check", "install", "launch", "add", "list", "deploy", "restart", "logs", "remove", "backup"];

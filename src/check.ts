@@ -1,7 +1,8 @@
 // What modest-deploy relies on, checked on the server itself, each with what to do if
 // it isn't so. modest-deploy doesn't set the server up: it checks the setup is safe.
 
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
+import { basename, dirname } from "node:path";
 import type { Run } from "./run.ts";
 
 export type Finding = { ok: boolean; what: string; fix: string };
@@ -31,6 +32,56 @@ export function outsidePorts(ss: string, open: Set<number> = OPEN): string[] {
 
 /** sshd's settings as it will use them (`sshd -T`), by lower-case name. */
 const sshdSettings = (text: string) => new Map(text.split("\n").map((line) => [line.split(" ")[0] ?? "", line.slice(line.indexOf(" ") + 1).trim()]));
+
+/** The files an sshd Include names: relative to /etc/ssh, and with * and ? only in the file's own name. */
+async function included(patterns: string[]): Promise<string[]> {
+  const files: string[] = [];
+  for (const pattern of patterns) {
+    const path = pattern.startsWith("/") ? pattern : `/etc/ssh/${pattern}`;
+    if (!/[*?]/.test(path)) {
+      files.push(path);
+      continue;
+    }
+    const name = new RegExp(
+      `^${basename(path)
+        .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+        .replace(/\*/g, ".*")
+        .replace(/\?/g, ".")}$`,
+    );
+    const names = await readdir(dirname(path)).catch(() => []);
+    files.push(
+      ...names
+        .filter((n) => name.test(n))
+        .sort()
+        .map((n) => `${dirname(path)}/${n}`),
+    );
+  }
+  return files;
+}
+
+/**
+ * Each line in a Match block that allows root, passwords, or typed answers. A Match can
+ * name any address, user, group, or port, which no sample connection to sshd -T can be
+ * sure to hit, so the blocks are read from sshd's files themselves.
+ */
+async function matchAllowances(read: (path: string) => Promise<string>, path = "/etc/ssh/sshd_config", inMatch = false, depth = 0): Promise<string[]> {
+  const found: string[] = [];
+  for (const line of (await read(path).catch(() => "")).split("\n")) {
+    const [key = "", ...rest] = line.trim().split(/\s*=\s*|\s+/);
+    const word = key.toLowerCase();
+    const value = rest.join(" ").replace(/"/g, "").toLowerCase();
+    if (word === "match") inMatch = true;
+    else if (word === "include" && depth < 8) for (const file of await included(rest)) found.push(...(await matchAllowances(read, file, inMatch, depth + 1)));
+    else if (
+      inMatch &&
+      (word === "permitrootlogin"
+        ? value !== "no"
+        : /^(passwordauthentication|kbdinteractiveauthentication|challengeresponseauthentication)$/.test(word) && value === "yes")
+    )
+      found.push(`${line.trim()} (${path})`);
+  }
+  return found;
+}
 
 export async function checkServer(run: Run, read = (path: string) => readFile(path, "utf8"), cli?: string): Promise<Finding[]> {
   const findings: Finding[] = [];
@@ -103,6 +154,12 @@ export async function checkServer(run: Run, read = (path: string) => readFile(pa
       root.length === 0,
       "SSH: no sign-in as root",
       "sign in as your own user with sudo, then set PermitRootLogin no in /etc/ssh/sshd_config.d/ and systemctl reload ssh",
+    );
+    const matched = await matchAllowances(read);
+    add(
+      matched.length === 0,
+      "SSH: no Match block allowing root, passwords, or typed answers",
+      `take out, or set to no, then systemctl reload ssh: ${matched.join("; ")}`,
     );
   }
 

@@ -12,6 +12,12 @@ Every change that affects how it's used, or what it promises. The format follows
   `modest-deploy help <command>` (or `<command> --help`) gives each command's page: what
   it does and changes, its options, and an example. Asking for help never runs a command.
 
+### Fixed
+
+- `check` missed a Match block allowing root, passwords, or typed answers for an address,
+  user, or port it didn't try (such as one outside address). It now reads every Match
+  block in sshd's files, and those they include, and fails on any that allows them.
+
 ## [0.2.0] - 2026-10-26
 
 ### Added
