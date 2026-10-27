@@ -6,9 +6,10 @@ import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { chmod, chown, mkdir, open, readdir, readFile, rename, rm, stat, statfs } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import { type App, areRedirects, freePort, listApps, MOST_REDIRECTS, readApp, readHost, saveApp, takenDomain, writeWhole } from "./apps.ts";
+import { type App, areRedirects, freePort, listApps, MOST_REDIRECTS, readApp, readHost, saveApp, takenDomain } from "./apps.ts";
 import { checkServer, report } from "./check.ts";
 import { answersWithin, running } from "./deploy.ts";
+import { exists, writeWhole } from "./files.ts";
 import { allot, type Machine, parseMemory, shares, sizeText } from "./memory.ts";
 import { isDomain, isName, isRepo } from "./names.ts";
 import { appUnit, appUser, buildUser, type Layout, LISTENER_USER } from "./paths.ts";
@@ -105,12 +106,7 @@ async function listening(server: Server): Promise<Set<number>> {
  */
 export async function moveOldSettings(paths: Layout): Promise<void> {
   const old = join(dirname(paths.apps), "products");
-  const there = (path: string) =>
-    stat(path).then(
-      () => true,
-      () => false,
-    );
-  if ((await there(old)) && !(await there(paths.apps))) await rename(old, paths.apps);
+  if ((await exists(old)) && !(await exists(paths.apps))) await rename(old, paths.apps);
 }
 
 /**
@@ -288,17 +284,7 @@ export async function remove(server: Server, name: string): Promise<string[]> {
   if (!isName(name)) throw new Error(`there's no app called ${name}`);
   // Anything left of it counts, even from an add that stopped part way.
   const parts = [paths.app(name), paths.unit(appUnit(name)), paths.caddySite(name), paths.secret(name), paths.code(name)];
-  const there = (
-    await Promise.all(
-      parts.map((path) =>
-        stat(path).then(
-          () => true,
-          () => false,
-        ),
-      ),
-    )
-  ).some(Boolean);
-  if (!there) throw new Error(`there's no app called ${name}`);
+  if (!(await Promise.all(parts.map(exists))).some(Boolean)) throw new Error(`there's no app called ${name}`);
   await run("systemctl", ["disable", "--now", appUnit(name)]);
   await rm(paths.unit(appUnit(name)), { force: true });
   await must(run, "systemctl", ["daemon-reload"]);

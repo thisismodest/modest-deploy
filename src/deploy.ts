@@ -3,11 +3,11 @@
 // install scripts off), switch to it, and check it answers; if it doesn't, switch back.
 // Run by the deploy service, as root, with git and npm run as the build user.
 
-import { constants } from "node:fs";
-import { lstat, mkdir, open, readdir, readlink, rename, rm, stat, statfs, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readlink, rename, rm, stat, statfs, symlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import type { App } from "./apps.ts";
 import { outsidePorts } from "./check.ts";
+import { exists, readPlain } from "./files.ts";
 import { isCommit } from "./names.ts";
 import { appUnit, appUser, buildUser, type Layout } from "./paths.ts";
 import { must, type Run } from "./run.ts";
@@ -38,12 +38,6 @@ export async function answersWithin(port: number, seconds = 60): Promise<boolean
   }
   return false;
 }
-
-const exists = (path: string) =>
-  lstat(path).then(
-    () => true,
-    () => false,
-  );
 
 /** The commit an app is running, from where its `current` link points, or null. */
 export async function running(paths: Layout, name: string): Promise<string | null> {
@@ -156,26 +150,6 @@ async function roomFor(deps: Deps, app: App, commit: string): Promise<void> {
   const free = await freeBytes(deps.paths.releases(app.name));
   if (free < bytes * 2 + KEEP_FREE)
     throw new Error(`the disk has ${Math.round(free / 1024 ** 2)}MB free, too little to build it and keep 1GB free: make some room`);
-}
-
-/**
- * A small file from a release, read by root only if it's a plain file (never a link,
- * which could point anywhere, or a device that never ends), or null if it isn't there.
- */
-async function readPlain(path: string, most = 1024 * 1024): Promise<string | null> {
-  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return null;
-    throw new Error(`${basename(path)} isn't a plain file`);
-  });
-  if (!file) return null;
-  try {
-    const found = await file.stat();
-    if (!found.isFile()) throw new Error(`${basename(path)} isn't a plain file`);
-    if (found.size > most) throw new Error(`${basename(path)} is larger than ${most / 1024}KB`);
-    return await file.readFile("utf8");
-  } finally {
-    await file.close();
-  }
 }
 
 /** Builds a release of `commit` in place, owned by root and readable by the app only. */

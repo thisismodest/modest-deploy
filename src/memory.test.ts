@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { APP, onServer } from "../test/helpers.ts";
-import { readApp, writeWhole } from "./apps.ts";
+import { readApp } from "./apps.ts";
+import { writeWhole } from "./files.ts";
 import { allot, type Machine, parseMemory, shares } from "./memory.ts";
 
 const MB = 1024 ** 2;

@@ -2,8 +2,8 @@
 // every time they're read: a file changed by hand can't put anything unchecked into
 // a path, a unit, or a command.
 
-import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readdir, readFile } from "node:fs/promises";
+import { writeWhole } from "./files.ts";
 import { DEFAULT_MEMORY, isMemory } from "./memory.ts";
 import { isDomain, isName, isPort, isRepo } from "./names.ts";
 import type { Layout } from "./paths.ts";
@@ -79,14 +79,6 @@ export async function listApps(paths: Layout): Promise<App[]> {
     if (app) found.push(app);
   }
   return found;
-}
-
-/** Writes a file whole or not at all: a crash never leaves half of one. */
-export async function writeWhole(path: string, text: string, mode = 0o644): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const partial = `${path}.${process.pid}.partial`;
-  await writeFile(partial, text, { mode });
-  await rename(partial, path);
 }
 
 export async function saveApp(paths: Layout, app: App): Promise<void> {

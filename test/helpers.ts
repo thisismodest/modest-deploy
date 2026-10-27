@@ -4,7 +4,8 @@ import { createHmac } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type App, saveApp, writeWhole } from "../src/apps.ts";
+import { type App, saveApp } from "../src/apps.ts";
+import { writeWhole } from "../src/files.ts";
 import { type Layout, layout } from "../src/paths.ts";
 
 export const SECRET = "a".repeat(64);

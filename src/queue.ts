@@ -4,9 +4,9 @@
 // them. A newer request for an app replaces an older one still waiting.
 
 import { randomBytes } from "node:crypto";
-import { constants } from "node:fs";
-import { mkdir, open, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { readPlain } from "./files.ts";
 import { isCommit, isName } from "./names.ts";
 import type { Layout } from "./paths.ts";
 
@@ -25,17 +25,7 @@ export async function enqueue(paths: Layout, name: string, commit: string | "tip
 }
 
 /** A request's text, read only if it's a small plain file: a pipe or a link left in the queue can't stall or misdirect it. */
-async function readSmall(path: string): Promise<string> {
-  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK).catch(() => null);
-  if (!file) return "";
-  try {
-    const found = await file.stat();
-    if (!found.isFile() || found.size > 64) return "";
-    return await file.readFile("utf8");
-  } finally {
-    await file.close();
-  }
-}
+const readSmall = async (path: string) => (await readPlain(path, 64).catch(() => null)) ?? "";
 
 /**
  * Takes one waiting request, or null if none is waiting. It's moved aside before
