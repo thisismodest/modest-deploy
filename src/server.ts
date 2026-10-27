@@ -8,17 +8,18 @@ import { chmod, chown, mkdir, open, readdir, readFile, rename, rm, stat, statfs 
 import { join, relative } from "node:path";
 import { checkServer, report } from "./check.ts";
 import { answersWithin, running } from "./deploy.ts";
+import { allot, DEFAULT_MEMORY, type Machine, parseMemory, shares, sizeText } from "./memory.ts";
 import { isDomain, isName, isRepo } from "./names.ts";
 import { buildUser, type Layout, LISTENER_USER, productUnit, productUser } from "./paths.ts";
 import { areRedirects, freePort, listProducts, MOST_REDIRECTS, type Product, readHost, readProduct, saveProduct, takenDomain, writeWhole } from "./products.ts";
 import { must, type Run } from "./run.ts";
 import { BACKUP_TIMER, backupService, caddyImport, deployPath, deployService, hostSite, listenerService, productService, productSite } from "./units.ts";
 
-export type Server = { run: Run; paths: Layout; node: string; cli: string; log: (line: string) => void };
+export type Server = { run: Run; paths: Layout; node: string; cli: string; log: (line: string) => void; machine: Machine };
 
 /** Checks the server, and refuses to go on if anything needs fixing (unless told to go on anyway). */
 async function checked(server: Server, anyway: boolean): Promise<void> {
-  const ok = report(await checkServer(server.run, undefined, server.cli));
+  const ok = report(await checkServer(server.run, undefined, server.cli, { products: await listProducts(server.paths), machine: server.machine }));
   if (!ok && !anyway) throw new Error("fix what's above first (or add --anyway, if you're sure)");
 }
 
@@ -145,7 +146,7 @@ export async function install(server: Server, given: string | undefined, anyway 
   await writeWhole(paths.host, `${JSON.stringify({ domain }, null, 2)}\n`);
 
   await writeWhole(paths.unit("modest-deploy-listener.service"), listenerService(paths, node, cli));
-  await writeWhole(paths.unit("modest-deploy-deploy.service"), deployService(node, cli));
+  await writeWhole(paths.unit("modest-deploy-deploy.service"), deployService(node, cli, server.machine));
   await writeWhole(paths.unit("modest-deploy-deploy.path"), deployPath(paths));
   await writeWhole(paths.unit("modest-deploy-backup.service"), backupService(node, cli));
   await writeWhole(paths.unit("modest-deploy-backup.timer"), BACKUP_TIMER);
@@ -153,7 +154,7 @@ export async function install(server: Server, given: string | undefined, anyway 
   const products = await listProducts(paths);
   const changed: Product[] = [];
   for (const product of products) {
-    const text = productService(paths, product, node);
+    const text = productService(paths, product, node, server.machine);
     if ((await readFile(paths.unit(productUnit(product.name)), "utf8").catch(() => "")) === text) continue;
     await writeWhole(paths.unit(productUnit(product.name)), text);
     changed.push(product);
@@ -185,12 +186,22 @@ export type Added = { name: string; domain: string; redirects: string[]; repo: s
  * already added (the same domain and repository), it gives the same secret and key, and
  * its redirects become the ones given.
  */
-export async function add(server: Server, name: string, domain: string, repo: string, anyway = false, redirects: string[] = []): Promise<Added> {
+export async function add(
+  server: Server,
+  name: string,
+  domain: string,
+  repo: string,
+  anyway = false,
+  redirects: string[] = [],
+  memory?: string,
+): Promise<Added> {
   if (!isName(name)) throw new Error("the name must be 2 to 29 lowercase letters, digits, and single hyphens, starting with a letter");
   if (!isDomain(domain)) throw new Error("the domain must be a domain, such as shop.example.org");
   if (!areRedirects(redirects, domain))
     throw new Error(`the redirects must be up to ${MOST_REDIRECTS} domains, each once, other than the product's own, such as www.shop.example.org`);
   if (!isRepo(repo)) throw new Error("the repository must be owner/name, as on GitHub");
+  const asked = memory === undefined ? undefined : parseMemory(memory);
+  if (asked === null) throw new Error("the memory must be a size, such as 512M or 1G (at least 128M), or max");
   await checked(server, anyway);
   const { paths, run, node } = server;
   const host = await readHost(paths);
@@ -201,14 +212,17 @@ export async function add(server: Server, name: string, domain: string, repo: st
   const others = (await listProducts(paths)).filter((p) => p.name !== name);
   const taken = takenDomain({ name, domain, redirects }, others, host);
   if (taken) throw new Error(`${taken} is already in use here`);
+  // Memory is given out only if it fits beside the others'; a product added again keeps its own unless told.
+  const given = asked === undefined && existing ? existing.memory : allot(asked ?? DEFAULT_MEMORY, others, server.machine);
   const product: Product = existing
-    ? { ...existing, redirects }
+    ? { ...existing, redirects, memory: given }
     : {
         name,
         domain,
         redirects,
         repo,
         port: freePort(others, await listening(server)),
+        memory: given,
         branch: "main",
         workflow: ".github/workflows/ci.yml",
       };
@@ -244,9 +258,11 @@ export async function add(server: Server, name: string, domain: string, repo: st
   await folder(server, paths.source(name), 0o700, builder);
   await must(run, "git", ["init", "--quiet", "--bare", paths.source(name)], { as: builder });
 
-  await writeWhole(paths.unit(productUnit(name)), productService(paths, product, node));
+  await writeWhole(paths.unit(productUnit(name)), productService(paths, product, node, server.machine));
   await must(run, "systemctl", ["daemon-reload"]);
   await must(run, "systemctl", ["enable", productUnit(name)]);
+  // Added again with a new size, a running product starts again with it.
+  if (existing && existing.memory !== given) await run("systemctl", ["try-restart", productUnit(name)]);
   await saveProduct(paths, product);
   return { name, domain, redirects, repo: product.repo, webhook: `https://${host.domain}/deploy/${name}`, secret, deployKey };
 }
@@ -279,13 +295,40 @@ export async function remove(server: Server, name: string): Promise<string[]> {
 
 export async function list(server: Server): Promise<string[]> {
   const rows: string[] = [];
-  for (const p of await listProducts(server.paths)) {
+  const products = await listProducts(server.paths);
+  for (const p of products) {
     const state = (await server.run("systemctl", ["is-active", productUnit(p.name)])).stdout.trim() || "unknown";
     const commit = (await running(server.paths, p.name))?.slice(0, 7) ?? "none yet";
     const from = p.redirects.length ? ` (from ${p.redirects.join(", ")})` : "";
-    rows.push(`${p.name}  https://${p.domain}${from}  ${p.repo}  port ${p.port}  ${state}  ${commit}`);
+    rows.push(`${p.name}  https://${p.domain}${from}  ${p.repo}  port ${p.port}  ${sizeText(p.memory)}  ${state}  ${commit}`);
   }
+  const { reserve, products: room } = shares(server.machine);
+  const given = products.reduce((sum, p) => sum + p.memory, 0);
+  rows.push(`Memory: ${sizeText(given)} of ${sizeText(room)} given to products (the server keeps ${sizeText(reserve)} for itself).`);
   return rows;
+}
+
+/**
+ * Gives a product more memory, or less: only if it fits beside the others'. A running
+ * product starts again with it, and is checked it answers.
+ */
+export async function resize(server: Server, name: string, memory: string | undefined): Promise<string> {
+  const { paths, run, node } = server;
+  const product = await readProduct(paths, name);
+  if (!product) throw new Error(`there's no product called ${name}`);
+  const asked = parseMemory(memory);
+  if (asked === null) throw new Error("say how much: --memory 512M, --memory 1G (at least 128M), or --memory max");
+  const others = (await listProducts(paths)).filter((p) => p.name !== name);
+  const given = allot(asked, others, server.machine);
+  const resized = { ...product, memory: given };
+  await writeWhole(paths.unit(productUnit(name)), productService(paths, resized, node, server.machine));
+  await saveProduct(paths, resized);
+  await must(run, "systemctl", ["daemon-reload"]);
+  if ((await run("systemctl", ["is-active", "--quiet", productUnit(name)])).code !== 0) return `${name} now has ${sizeText(given)}, from its next start.`;
+  await run("systemctl", ["restart", productUnit(name)]);
+  return (await answersWithin(product.port))
+    ? `${name} now has ${sizeText(given)}: restarted, and answering.`
+    : `${name} now has ${sizeText(given)}, but isn't answering since it restarted: see modest-deploy logs ${name}`;
 }
 
 /** Databases are files ending .db, .sqlite, or .sqlite3, anywhere in a product's data. */

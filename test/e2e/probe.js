@@ -84,6 +84,8 @@ const handle = async (req, res) => {
     return res.end(JSON.stringify(results));
   }
   if (url.pathname === "/env") return res.end(JSON.stringify({ PORT, HOST, DATA_DIR }));
+  // What the product is given: its thread pool, and the memory Node sees it may use
+  if (url.pathname === "/given") return res.end(JSON.stringify({ pool: process.env.UV_THREADPOOL_SIZE, memory: process.constrainedMemory() }));
   if (url.pathname === "/alloc") {
     // Holds on to memory, touching every page, until the memory limit stops it.
     const held = [];

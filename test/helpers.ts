@@ -15,6 +15,7 @@ export const PRODUCT: Product = {
   redirects: [],
   repo: "example/shop",
   port: 4100,
+  memory: 512,
   branch: "main",
   workflow: ".github/workflows/ci.yml",
 };

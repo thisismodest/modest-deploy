@@ -6,6 +6,29 @@ Every change that affects how it's used, or what it promises. The format follows
 
 ## Unreleased
 
+### Added
+
+- Memory set aside for each product: 512M, or what `--memory` gives on `add` and
+  `launch` (such as `1G`, or `max` for all that's left). It's the product's alone and
+  its ceiling, and a product is added only if it fits beside the others, as the server
+  keeps a quarter of its memory for itself (never under 384M). Together, products can't
+  run the server out of memory, and one can't take another's.
+- `modest-deploy resize <name> --memory <size>`: more memory for a product, or less, if
+  it fits.
+- `modest-deploy list --server a,b`: every server's products, from your computer.
+- `check` finds products given more memory than the server has for them.
+
+### Changed
+
+- `list` shows each product's memory and how much is given out, and needs no sudo.
+- Each product's Node thread pool is sized to the server's cores (the cores and two, at
+  most 18), so modest-auth 0.5.0 and later can hash a password on each core.
+- The deploy service builds within its share of the server's own memory (from 192M to
+  1G), not a fixed 1G: on a small server, a build no longer takes products' memory.
+- Settings from before memory was given out have 512M, as every product had. A server
+  whose products now add up to more than it has for them is found by `check` (so
+  `install` and `add` stop, unless `--anyway`): give some less with `resize`.
+
 ## [0.3.0] - 2026-10-27
 
 ### Added

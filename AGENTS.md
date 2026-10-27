@@ -31,9 +31,10 @@ docs/threat-model.md for how.
 | The deploy listener: an HTTP server for those messages | `src/listener.ts` |
 | Deploy requests, from the listener to the deploy service | `src/queue.ts` |
 | Deploying: fetch, build, switch, check, go back | `src/deploy.ts` |
-| install, add, remove, list, and backup | `src/server.ts` |
+| install, add, remove, list, resize, and backup | `src/server.ts` |
+| Each product's memory, and the server's own share | `src/memory.ts` |
 | The server's checks | `src/check.ts` |
-| launch, from a laptop | `src/launch.ts` |
+| launch, and list --server, from your computer | `src/launch.ts` |
 | The systemd units and Caddy sites it writes | `src/units.ts` |
 | Each product's settings | `src/products.ts` |
 | Where everything lives, and the users | `src/paths.ts` |

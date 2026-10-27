@@ -4,11 +4,15 @@
 
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { DEFAULT_MEMORY, isMemory } from "./memory.ts";
 import { isDomain, isName, isPort, isRepo } from "./names.ts";
 import type { Layout } from "./paths.ts";
 
-/** A product's domain, and the domains that only redirect to it (such as www.), never reaching the product. */
-export type Product = { name: string; domain: string; redirects: string[]; repo: string; port: number; branch: string; workflow: string };
+/**
+ * A product's domain, and the domains that only redirect to it (such as www.), never
+ * reaching the product; and its memory, in megabytes, set aside for it (memory.ts).
+ */
+export type Product = { name: string; domain: string; redirects: string[]; repo: string; port: number; memory: number; branch: string; workflow: string };
 export type Host = { domain: string };
 
 export const BRANCH = "main";
@@ -37,7 +41,10 @@ function checked(value: unknown, name: string): Product {
   if (!areRedirects(redirects, p.domain)) throw new Error(`${name}: its redirects aren't a few domains, other than its own`);
   if (!isRepo(p.repo)) throw new Error(`${name}: its repository isn't owner/name`);
   if (!isPort(p.port)) throw new Error(`${name}: its port isn't one it can use`);
-  return { name, domain: p.domain, redirects, repo: p.repo, port: p.port, branch: BRANCH, workflow: WORKFLOW };
+  // Settings from before memory was given out have what every product had then.
+  const memory = p.memory === undefined ? DEFAULT_MEMORY : p.memory;
+  if (!isMemory(memory)) throw new Error(`${name}: its memory isn't whole megabytes, from 128 to 1048576`);
+  return { name, domain: p.domain, redirects, repo: p.repo, port: p.port, memory, branch: BRANCH, workflow: WORKFLOW };
 }
 
 /** A product's settings, or null if there's no such product. */
@@ -84,8 +91,8 @@ export async function writeWhole(path: string, text: string, mode = 0o644): Prom
 
 export async function saveProduct(paths: Layout, product: Product): Promise<void> {
   checked(product, product.name);
-  const { name, domain, redirects, repo, port } = product;
-  await writeWhole(paths.product(name), `${JSON.stringify({ name, domain, redirects, repo, port }, null, 2)}\n`);
+  const { name, domain, redirects, repo, port, memory } = product;
+  await writeWhole(paths.product(name), `${JSON.stringify({ name, domain, redirects, repo, port, memory }, null, 2)}\n`);
 }
 
 /** The first port no product has, and nothing else is listening on. */

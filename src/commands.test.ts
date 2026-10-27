@@ -4,13 +4,16 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { onServer, PRODUCT } from "../test/helpers.ts";
 import { checkServer, outsidePorts } from "./check.ts";
-import { isServer, launch } from "./launch.ts";
+import { isServer, launch, listServers } from "./launch.ts";
+import type { Machine } from "./memory.ts";
 import { layout } from "./paths.ts";
 import { readProduct, takenDomain, writeWhole } from "./products.ts";
 import type { Ran, Run, RunOptions } from "./run.ts";
-import { hostSite, listenerService, productService, productSite } from "./units.ts";
+import { deployService, hostSite, listenerService, productService, productSite } from "./units.ts";
 
 const ok = (stdout = ""): Ran => ({ code: 0, stdout, stderr: "" });
+const MB = 1024 ** 2;
+const SMALL: Machine = { total: 960 * MB, cores: 1 };
 
 test("only SSH, HTTP, and HTTPS may listen to the outside; anything on this machine's own address may", () => {
   const ss = [
@@ -61,7 +64,7 @@ test("password sign-in, root sign-in, no automatic updates, and an open port are
 });
 
 test("each product runs as its own user, sandboxed, able to bind only its own port, with the server's secrets out of reach", () => {
-  const unit = productService(layout(), PRODUCT, "/usr/bin/node");
+  const unit = productService(layout(), PRODUCT, "/usr/bin/node", SMALL);
   for (const line of [
     "User=md-shop",
     "NoNewPrivileges=yes",
@@ -73,6 +76,8 @@ test("each product runs as its own user, sandboxed, able to bind only its own po
     "SocketBindDeny=any",
     "StateDirectory=modest-deploy/shop",
     "MemoryMax=512M",
+    "MemoryLow=512M",
+    "Environment=UV_THREADPOOL_SIZE=3",
   ]) {
     assert.ok(unit.split("\n").includes(line), line);
   }
@@ -83,7 +88,7 @@ test("each product runs as its own user, sandboxed, able to bind only its own po
 });
 
 test("nothing unchecked can reach a unit or a Caddy site, so no value can add a line of its own", () => {
-  assert.throws(() => productService(layout(), { ...PRODUCT, name: "shop\nExecStartPre=/bin/sh" }, "/usr/bin/node"));
+  assert.throws(() => productService(layout(), { ...PRODUCT, name: "shop\nExecStartPre=/bin/sh" }, "/usr/bin/node", SMALL));
   assert.throws(() => productSite({ ...PRODUCT, domain: "shop.example.org {\n}\nevil.example.org" }));
   assert.throws(() => productSite({ ...PRODUCT, port: 22 }));
   assert.throws(() => hostSite("x.org\n\troot * /"));
@@ -344,9 +349,123 @@ test("a Match block that allows root for one outside address is found, in a file
   assert.equal((await checkServer(run, read)).find((f) => f.what.startsWith("SSH: no Match block"))?.ok, true);
 });
 
+test("a product's memory is set aside for it and is its ceiling, and its thread pool fits the cores", () => {
+  const unit = productService(layout(), { ...PRODUCT, memory: 1536 }, "/usr/bin/node", { total: 8 * 1024 * MB, cores: 6 });
+  for (const line of ["MemoryMax=1536M", "MemoryLow=1536M", "Environment=UV_THREADPOOL_SIZE=8"]) assert.ok(unit.split("\n").includes(line), line);
+  const big = productService(layout(), PRODUCT, "/usr/bin/node", { total: 256 * 1024 * MB, cores: 64 });
+  assert.ok(big.split("\n").includes("Environment=UV_THREADPOOL_SIZE=18"), "never more than 18");
+  assert.throws(() => productService(layout(), { ...PRODUCT, memory: 64 }, "/usr/bin/node", SMALL), "too little to run");
+});
+
+test("the deploy service builds within the server's own share of memory", () => {
+  assert.ok(deployService("/usr/bin/node", "/opt/modest-deploy/src/cli.ts", SMALL).split("\n").includes("MemoryMax=192M"));
+  assert.ok(
+    deployService("/usr/bin/node", "/opt/modest-deploy/src/cli.ts", { total: 16 * 1024 * MB, cores: 8 })
+      .split("\n")
+      .includes("MemoryMax=1024M"),
+  );
+});
+
+test("products given more memory than the server has for them are found, with what to do", async () => {
+  const run = server({});
+  const finding = async (memories: number[]) =>
+    (
+      await checkServer(run, async () => "", undefined, { products: memories.map((memory, i) => ({ ...PRODUCT, name: `p${i}`, memory })), machine: SMALL })
+    ).find((f) => f.what.startsWith("products' memory"));
+  assert.equal((await finding([512]))?.ok, true);
+  assert.equal((await finding([256, 256]))?.ok, true);
+  const over = await finding([512, 512]);
+  assert.equal(over?.ok, false);
+  assert.match(over?.fix ?? "", /1G given to products, which have 576M here/);
+  assert.match(over?.fix ?? "", /modest-deploy resize/);
+});
+
+test("launch gives the server a checked memory size, and refuses an odd one before running anything", async () => {
+  const calls: string[][] = [];
+  const run: Run = async (program, args) => {
+    calls.push([program, ...args]);
+    if (program === "gh" && args[0] === "api" && args[1] === "user") return ok("example\n");
+    if (program === "ssh")
+      return ok(
+        JSON.stringify({
+          name: "shop",
+          domain: "shop.example.org",
+          repo: "example/shop",
+          webhook: "https://deploy.example.org/deploy/shop",
+          secret: "c".repeat(64),
+          deployKey: "ssh-ed25519 AAAA modest-deploy shop",
+        }),
+      );
+    if (program === "gh" && args[0] === "api" && args.length === 2) return ok("[]");
+    return ok();
+  };
+  await launch(
+    run,
+    {
+      name: "shop",
+      domain: "shop.example.org",
+      redirects: [],
+      server: "myserver",
+      repo: "example/shop",
+      template: undefined,
+      visibility: "private",
+      memory: "768M",
+    },
+    () => {},
+  );
+  const ssh = calls.find((c) => c[0] === "ssh") ?? [];
+  assert.deepEqual(ssh.slice(ssh.indexOf("--memory"), ssh.indexOf("--memory") + 2), ["--memory", "768M"]);
+  for (const memory of ["768M; reboot", "lots", "1.5G", "-1G"]) {
+    calls.length = 0;
+    await assert.rejects(
+      launch(
+        run,
+        {
+          name: "shop",
+          domain: "shop.example.org",
+          redirects: [],
+          server: "myserver",
+          repo: "example/shop",
+          template: undefined,
+          visibility: "private",
+          memory,
+        },
+        () => {},
+      ),
+      /memory/,
+    );
+    assert.deepEqual(calls, [], `${memory}: nothing ran`);
+  }
+});
+
+test("list --server lists each server's products in turn, over SSH, refusing an odd server before running anything", async () => {
+  const calls: string[][] = [];
+  const said: string[] = [];
+  const run: Run = async (program, args) => {
+    calls.push([program, ...args]);
+    const host = args[args.indexOf("--") + 1];
+    if (host === "down") return { code: 255, stdout: "", stderr: "ssh: connect to host down port 22: Connection refused" };
+    return ok(`${host === "one" ? "shop" : "blog"}  https://x.example.org  example/x  port 4100  512M  active  0123456\n`);
+  };
+  const failed = await listServers(run, ["one", "two", "down"], (line) => said.push(line));
+  assert.equal(failed, 1, "one server didn't answer");
+  for (const call of calls) {
+    assert.equal(call[0], "ssh");
+    assert.ok(call.includes("BatchMode=yes"));
+    assert.deepEqual(call.slice(call.indexOf("--") + 2), ["modest-deploy", "list"]);
+  }
+  assert.match(said.join("\n"), /== one\nshop[\s\S]*== two\nblog[\s\S]*== down\n.*Connection refused/);
+  calls.length = 0;
+  await assert.rejects(
+    listServers(run, ["one", "-oProxyCommand=x"], () => {}),
+    /server/,
+  );
+  assert.deepEqual(calls, [], "nothing ran");
+});
+
 const CLI = fileURLToPath(new URL("./cli.ts", import.meta.url));
 const cli = (...args: string[]) => spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8", timeout: 20_000 });
-const COMMANDS = ["check", "install", "launch", "add", "list", "deploy", "restart", "logs", "remove", "backup"];
+const COMMANDS = ["check", "install", "launch", "add", "list", "deploy", "restart", "resize", "logs", "remove", "backup"];
 
 test("with no command, -h, --help, or help, it says how to get started, and exits cleanly", () => {
   for (const args of [[], ["-h"], ["--help"], ["help"]]) {

@@ -3,6 +3,7 @@
 
 import { readdir, readFile } from "node:fs/promises";
 import { basename, dirname } from "node:path";
+import { type Machine, shares, sizeText } from "./memory.ts";
 import type { Run } from "./run.ts";
 
 export type Finding = { ok: boolean; what: string; fix: string };
@@ -83,7 +84,16 @@ async function matchAllowances(read: (path: string) => Promise<string>, path = "
   return found;
 }
 
-export async function checkServer(run: Run, read = (path: string) => readFile(path, "utf8"), cli?: string): Promise<Finding[]> {
+/**
+ * Checks the server is set up safely. Given its products and its size, also that their
+ * memory fits in what the server has for them (memory.ts).
+ */
+export async function checkServer(
+  run: Run,
+  read = (path: string) => readFile(path, "utf8"),
+  cli?: string,
+  fleet?: { products: { name: string; memory: number }[]; machine: Machine },
+): Promise<Finding[]> {
   const findings: Finding[] = [];
   const add = (ok: boolean, what: string, fix: string) => findings.push({ ok, what, fix });
   const works = async (program: string, args: string[]) => (await run(program, args)).code === 0;
@@ -185,6 +195,16 @@ export async function checkServer(run: Run, read = (path: string) => readFile(pa
     "nothing listening to the outside but SSH, HTTP, and HTTPS",
     extra === null ? "ss (iproute2) is needed to see what's listening" : `stop, or listen only on 127.0.0.1: ${extra.join(", ")}`,
   );
+
+  if (fleet) {
+    const given = fleet.products.reduce((sum, p) => sum + p.memory, 0);
+    const room = shares(fleet.machine).products;
+    add(
+      given <= room,
+      "products' memory fits this server",
+      `${sizeText(given)} given to products, which have ${sizeText(room)} here: give some less (modest-deploy resize <name> --memory <size>), remove one, or use a bigger server`,
+    );
+  }
 
   // The services run as users of their own, so Node and modest-deploy must be readable by others (not under /root, nor installed with a strict umask).
   if (cli) {

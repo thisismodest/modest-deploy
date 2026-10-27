@@ -1,8 +1,9 @@
-// Launching a product, from your laptop: make its GitHub repository (from a template,
+// Launching a product, from your computer: make its GitHub repository (from a template,
 // if named), add it on the server over SSH, then give GitHub the server's read-only
 // deploy key and the signed webhook. Uses gh and ssh, as you already do; the webhook's
 // secret goes to GitHub on standard input, never in a command line.
 
+import { parseMemory } from "./memory.ts";
 import { isDomain, isName, isRepo } from "./names.ts";
 import { areRedirects, MOST_REDIRECTS } from "./products.ts";
 import { must, type Run } from "./run.ts";
@@ -16,6 +17,8 @@ export type Launch = {
   repo?: string | undefined;
   template?: string | undefined;
   visibility: "private" | "public";
+  /** The product's memory, such as 512M, 1G, or max (memory.ts); the server's default if not given. */
+  memory?: string | undefined;
 };
 
 /** An SSH destination: a host from your SSH config, or user@host. Nothing a shell would read as more. */
@@ -30,12 +33,15 @@ export async function launch(run: Run, options: Launch, log: (line: string) => v
     throw new Error(`the redirects must be up to ${MOST_REDIRECTS} domains, each once, other than the product's own, such as www.shop.example.org`);
   if (!isServer(server)) throw new Error("the server must be a host from your SSH config, or user@host");
   if (options.template !== undefined && !isRepo(options.template)) throw new Error("the template must be a repository, as owner/name");
+  if (options.memory !== undefined && parseMemory(options.memory) === null)
+    throw new Error("the memory must be a size, such as 512M or 1G (at least 128M), or max");
   const env = {
     PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
     HOME: process.env.HOME ?? "",
     ...(process.env.GH_TOKEN ? { GH_TOKEN: process.env.GH_TOKEN } : {}),
   };
   const gh = (args: string[], input?: string) => must(run, "gh", args, { env, ...(input === undefined ? {} : { input }) });
+
 
   const repo = options.repo ?? `${(await gh(["api", "user", "--jq", ".login"])).trim()}/${name}`;
   if (!isRepo(repo)) throw new Error("the repository must be owner/name, as on GitHub");
@@ -53,6 +59,7 @@ export async function launch(run: Run, options: Launch, log: (line: string) => v
     [
       ...["-o", "BatchMode=yes", "--", server, "sudo", "modest-deploy", "add", name, "--domain", domain, "--repo", repo],
       ...(redirects.length ? ["--redirect", redirects.join(",")] : []),
+      ...(options.memory === undefined ? [] : ["--memory", options.memory]),
       "--json",
     ],
     { env, timeout: 120_000 },
@@ -105,3 +112,25 @@ export async function launch(run: Run, options: Launch, log: (line: string) => v
   log(`  1. Point the DNS of ${[domain, ...redirects].join(", ")} at the server (an A record each, and AAAA if it has IPv6).`);
   log(`  2. Push to main, with a CI workflow at .github/workflows/ci.yml. Once it passes, it's live at https://${domain}.`);
 }
+
+/**
+ * Every product on each of `servers`, from your computer: each server's own list, over
+ * SSH, in turn. One that doesn't answer is said, and the rest still listed. Gives how
+ * many didn't answer.
+ */
+export async function listServers(run: Run, servers: string[], log: (line: string) => void): Promise<number> {
+  const odd = servers.find((server) => !isServer(server));
+  if (odd !== undefined || !servers.length) throw new Error("each server must be a host from your SSH config, or user@host, separated by commas");
+  let failed = 0;
+  for (const server of servers) {
+    log(`== ${server}`);
+    const ran = await run("ssh", ["-o", "BatchMode=yes", "--", server, "modest-deploy", "list"], { timeout: 60_000 });
+    if (ran.code === 0) log(ran.stdout.trimEnd() || "(no products)");
+    else {
+      failed++;
+      log(`didn't answer: ${ran.stderr.trim().split("\n").at(-1) ?? `ssh exited ${ran.code}`}`);
+    }
+  }
+  return failed;
+}
+

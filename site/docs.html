@@ -94,7 +94,7 @@
             Or run it from a clone of the repository, which Node runs as it is:
             <code>sudo git clone https://github.com/thisismodest/modest-deploy.git /opt/modest-deploy</code>, then
             <code>sudo ln -s /opt/modest-deploy/src/cli.ts /usr/local/bin/modest-deploy</code>. For <code>launch</code>,
-            install it on your laptop too.
+            install it on your computer too.
           </p>
           <p>
             <code>check</code> lists what it relies on, each marked <code>ok</code> or with what to fix.
@@ -106,13 +106,13 @@
 
         <section aria-labelledby="launch">
           <h2 id="launch">Launch a product</h2>
-          <p>From your laptop, with <code>gh</code> signed in and SSH access to the server:</p>
+          <p>From your computer, with <code>gh</code> signed in and SSH access to the server:</p>
           <div class="window terminal">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
             <pre><code><span class="c">$</span> modest-deploy launch shop shop.example.org --server myserver --template example/template</code></pre>
           </div>
           <ol>
-            <li><strong>Makes the repository</strong> on GitHub (private, unless you add <code>--public</code>), from your template if you name one.</li>
+            <li><strong>Makes the repository</strong> on GitHub (private, unless you add <code>--public</code>), from your template if you name one. If it's there already, it's used as it is: only the key and webhook below are added.</li>
             <li><strong>Adds the product on the server:</strong> its own user, folder, keys file, service, and its domain in Caddy, which gets and renews its HTTPS certificate.</li>
             <li><strong>Connects them:</strong> gives GitHub the server's read-only deploy key, and a webhook for the "Workflow runs" event, signed with a secret made for this product.</li>
             <li><strong>Tells you what's left:</strong> point the domain's DNS at the server, and push.</li>
@@ -122,6 +122,50 @@
             Add <code>--redirect www.shop.example.org</code> (or several, separated by commas) for domains that send visitors to the
             product's own, at the same path. They never reach the product, and no domain can be used by two products. Run
             <code>add</code> again on the server to change them.
+          </p>
+          <p>Each product is given memory of its own: 512M, or what you give with <code>--memory</code> (see <a href="#memory">Memory</a>).</p>
+        </section>
+
+        <section aria-labelledby="memory">
+          <h2 id="memory">Memory</h2>
+          <p>
+            Each product's memory is set aside for it alone, and is also its ceiling. The server keeps a quarter of its memory for
+            itself (never under 384M), for the system, SSH, Caddy, the listener, and deploys; products share the rest, and one is
+            added only if it fits. So however busy products get, together they can't run the server out of memory, and one
+            can't take another's. A product that goes over its own is restarted, and nothing else is touched.
+          </p>
+          <p>A server has a little less memory than its size (the kernel keeps some), so these are close, not exact. <code>list</code> gives the real figures.</p>
+          <div class="table-card">
+            <table>
+              <thead><tr><th scope="col">Server</th><th scope="col">Kept for the server</th><th scope="col">For products</th><th scope="col">For example</th></tr></thead>
+              <tbody>
+                <tr><td>1GB</td><td>384M (deploys use up to 192M of it)</td><td>576M</td><td>One at 512M, or two at 256M</td></tr>
+                <tr><td>2GB</td><td>About 490M</td><td>About 1.4G</td><td>Two at 512M and one at 256M</td></tr>
+                <tr><td>4GB</td><td>About 980M</td><td>About 2.9G</td><td>Five at 512M</td></tr>
+                <tr><td>16GB</td><td>About 4G (deploys use up to 1G)</td><td>About 11.7G</td><td>Any mix that adds up</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="window terminal">
+            <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
+            <pre><code><span class="c">$</span> modest-deploy launch club club.example.org --server clubserver --memory max
+<span class="c">$</span> sudo modest-deploy resize shop --memory 1G
+<span class="c">$</span> modest-deploy list --server shopserver,clubserver</code></pre>
+          </div>
+          <p>
+            Sizes are whole megabytes or gigabytes (<code>768M</code>, <code>2G</code>), at least <code>128M</code>, or
+            <code>max</code> for all that's left. <code>list</code> shows each product's memory and what's given out, and
+            <code>check</code> says if products have more than the server has for them (after moving to a smaller server, say).
+            After giving the server more memory or cores, run <code>install</code> again: it sizes everything to the server.
+          </p>
+          <p>
+            Each product's Node thread pool is sized to the server's cores (the cores and two, at most 18). That's what lets
+            <a href="https://modest-auth.com">modest-auth</a> check a password on each core: on a server with more cores, more
+            people can sign in at once.
+          </p>
+          <p>
+            Small products can share a server. Anything with personal data, money, or real traffic is better on a server of its
+            own: <code>list --server</code> shows them all, from your computer.
           </p>
         </section>
 
@@ -165,18 +209,19 @@
                 <tr><td><code>check</code></td><td>Server</td><td>Checks the server is set up safely, and says what to fix</td></tr>
                 <tr><td><code>install --domain &lt;d&gt;</code></td><td>Server</td><td>Installs modest-deploy's own parts, once</td></tr>
                 <tr><td><code>help [&lt;command&gt;]</code></td><td>Either</td><td>How to get started, or one command's page: what it does, its options, and an example (also <code>-h</code>, <code>--help</code>)</td></tr>
-                <tr><td><code>launch &lt;name&gt; &lt;domain&gt; --server &lt;s&gt;</code></td><td>Laptop</td><td>Makes the repository, adds the product, and connects them</td></tr>
+                <tr><td><code>launch &lt;name&gt; &lt;domain&gt; --server &lt;s&gt;</code></td><td>Your computer</td><td>Makes the repository, adds the product, and connects them</td></tr>
                 <tr><td><code>add &lt;name&gt; --domain &lt;d&gt; --repo &lt;o/r&gt; [--redirect &lt;d,...&gt;]</code></td><td>Server</td><td>Adds a product (launch does this for you); again to change its redirects</td></tr>
-                <tr><td><code>list</code></td><td>Server</td><td>The products, their domains, and what each is running</td></tr>
+                <tr><td><code>list [--server &lt;s,...&gt;]</code></td><td>Either</td><td>The products, their memory, and what each is running; from your computer, every server's</td></tr>
                 <tr><td><code>deploy &lt;name&gt;</code></td><td>Server</td><td>Deploys main's newest commit now, whether or not its CI passed</td></tr>
                 <tr><td><code>restart &lt;name&gt;</code></td><td>Server</td><td>Restarts a product, after changing its keys</td></tr>
+                <tr><td><code>resize &lt;name&gt; --memory &lt;size&gt;</code></td><td>Server</td><td>Gives a product more memory, or less, if it fits</td></tr>
                 <tr><td><code>logs &lt;name&gt;</code></td><td>Server</td><td>A product's latest log lines</td></tr>
                 <tr><td><code>backup</code></td><td>Server</td><td>Copies every product's databases now (it runs nightly anyway)</td></tr>
                 <tr><td><code>remove &lt;name&gt;</code></td><td>Server</td><td>Takes a product off; its data, copies, and keys file stay</td></tr>
               </tbody>
             </table>
           </div>
-          <p>On the server, run them with <code>sudo</code>. Add <code>--anyway</code> to <code>install</code> or <code>add</code> to go on when <code>check</code> finds something to fix.</p>
+          <p>On the server, run them with <code>sudo</code> (all but <code>list</code>). Add <code>--anyway</code> to <code>install</code> or <code>add</code> to go on when <code>check</code> finds something to fix.</p>
         </section>
 
         <section aria-labelledby="update">

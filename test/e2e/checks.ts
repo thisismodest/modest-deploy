@@ -25,6 +25,7 @@ import {
 } from "node:fs";
 import { request } from "node:http";
 import { connect, createServer } from "node:net";
+import { availableParallelism, totalmem } from "node:os";
 import { DatabaseSync } from "node:sqlite";
 
 // ---- Running programs
@@ -1137,6 +1138,102 @@ await check(20, "alpha allocating without limit is stopped at its memory limit; 
   assert.ok(await isLive(), "alpha came back");
 });
 
+// ---- Memory, given out so the server can't run out
+
+const MB = 1024 ** 2;
+/** What the server has for products, as modest-deploy works it out (a quarter kept, never under 384M). */
+const forProducts = () => {
+  const all = Math.floor(totalmem() / MB);
+  return all - Math.min(all, Math.max(384, Math.ceil(all / 4)));
+};
+const listed = () => md("list").out;
+
+await check(63, "each product's memory is set aside and is its ceiling, Node sees it as its limit, and its thread pool fits the cores", async () => {
+  const props = run("systemctl", ["show", "-p", "MemoryMax,MemoryLow", "modest-deploy-alpha.service"]).out.trim();
+  const given = JSON.parse(await answer("alpha", "/given"));
+  note(
+    `${props.replace(/\n/g, ", ")}; alpha sees ${JSON.stringify(given)}; deploy service ${run("systemctl", ["show", "-p", "MemoryMax", "--value", DEPLOY]).out.trim()}`,
+  );
+  assert.match(props, new RegExp(`MemoryMax=${512 * MB}`));
+  assert.match(props, new RegExp(`MemoryLow=${512 * MB}`));
+  assert.equal(given.memory, 512 * MB, "Node in alpha sees its 512M as the memory it may use");
+  assert.equal(given.pool, String(Math.min(availableParallelism() + 2, 18)), "a thread pool of the cores and two");
+  const deployMax = Number(run("systemctl", ["show", "-p", "MemoryMax", "--value", DEPLOY]).out.trim());
+  assert.ok(deployMax <= 1024 * MB && deployMax < totalmem() - forProducts() * MB, "a deploy builds within the server's own share");
+});
+
+await check(64, "a product is added, or resized, only if its memory fits beside the others'; max gives what's left", async () => {
+  // Every product here counts, those inside.ts added too (512M each, unless their settings say)
+  const given = readdirSync("/etc/modest-deploy/products")
+    .filter((f) => f.endsWith(".json"))
+    .reduce((sum, f) => sum + (JSON.parse(readFileSync(`/etc/modest-deploy/products/${f}`, "utf8")).memory ?? 512), 0);
+  const room = forProducts() - given;
+  const tooMuch = md("add", "gamma", "--domain", "gamma.example.org", "--repo", "example/gamma", "--memory", `${room + 1}M`);
+  note(`room for ${room}M: ${tooMuch.out.trim().split("\n").at(-1)}`);
+  assert.notEqual(tooMuch.code, 0, "more than there's room for was added");
+  assert.ok(!existsSync("/etc/modest-deploy/products/gamma.json"), "and left settings behind");
+  assert.equal(md("add", "gamma", "--domain", "gamma.example.org", "--repo", "example/gamma", "--memory", "max").code, 0);
+  try {
+    assert.match(listed(), new RegExp(`^gamma .* ${room >= 1024 && room % 512 === 0 ? `${room / 1024}G` : `${room}M`} `, "m"), "max: all that's left");
+    const more = md("add", "delta", "--domain", "delta.example.org", "--repo", "example/delta");
+    assert.notEqual(more.code, 0, "a product added with no room left");
+    assert.match(more.out, /no room for another product/);
+    assert.equal(md("resize", "gamma", "--memory", "256M").code, 0);
+    assert.match(listed(), /^gamma .* 256M /m);
+    assert.match(run("systemctl", ["show", "-p", "MemoryMax", "--value", "modest-deploy-gamma.service"]).out, new RegExp(String(256 * MB)));
+    assert.notEqual(md("resize", "alpha", "--memory", `${forProducts()}M`).code, 0, "resized past the room there is");
+    assert.match(listed(), /^Memory: .* given to products/m);
+  } finally {
+    md("remove", "gamma");
+  }
+});
+
+await check(
+  65,
+  "with products filling every byte they're given, and a deploy at the same time, the server still answers: SSH, Caddy, the listener, and the deploy",
+  async () => {
+    // Alpha given all that's left, then alpha and beta both hold on to memory until stopped, while beta deploys.
+    assert.equal(md("resize", "alpha", "--memory", "max").code, 0);
+    for (let i = 0; i < 60 && !(await isLive()); i++) await sleep(1000);
+    try {
+      const hold = (name: string) => fetch(`http://127.0.0.1:${productPort(name)}/alloc`, { signal: AbortSignal.timeout(300000) }).catch(() => null);
+      const holding = [hold("alpha"), hold("beta")];
+      const next = version("beta");
+      await send(message("beta", next.sha));
+      await sleep(3000);
+      const banner = await new Promise<string>((resolve) => {
+        const socket = connect(22, "127.0.0.1");
+        socket.setTimeout(10000, () => resolve("(timed out)"));
+        socket.once("data", (d) => {
+          resolve(String(d).trim());
+          socket.destroy();
+        });
+        socket.on("error", (e) => resolve(e.message));
+      });
+      const caddy = await fetch("http://127.0.0.1/", { headers: { host: "alpha.example.org" }, redirect: "manual", signal: AbortSignal.timeout(10000) }).then(
+        (r) => r.status,
+        (e: Error) => e.message,
+      );
+      const listener = await fetch("http://127.0.0.1:9327/", { signal: AbortSignal.timeout(10000) }).then(
+        (r) => r.status,
+        (e: Error) => e.message,
+      );
+      note(`while full: SSH ${banner.slice(0, 20)}, Caddy ${caddy}, listener ${listener}`);
+      assert.match(banner, /^SSH-2\.0/, "SSH answers");
+      assert.equal(typeof caddy, "number", "Caddy answers");
+      assert.equal(typeof listener, "number", "the listener answers");
+      await Promise.all(holding);
+      await settled();
+      assert.equal(await answer("beta"), next.label, "beta's deploy went live");
+      live.beta = next;
+      for (let i = 0; i < 120 && !(await isLive()); i++) await sleep(1000);
+      assert.ok(await isLive(), "alpha came back");
+    } finally {
+      md("resize", "alpha", "--memory", "512M");
+    }
+  },
+);
+
 await check(58, "a product that keeps crashing restarts with growing delays", async () => {
   const props = run("systemctl", ["show", "-p", "Restart,RestartUSec,RestartSteps,RestartMaxDelayUSec", "modest-deploy-alpha.service"]).out.trim();
   note(props.replace(/\n/g, ", "));
@@ -1160,10 +1257,11 @@ await check(58, "a product that keeps crashing restarts with growing delays", as
 
 // ---- The deploy service, as a unit
 
-await check(39, "the deploy unit has MemoryMax=1G and no devices", async () => {
+await check(39, "the deploy unit has a memory limit (half the server's own share, from 192M to 1G) and no devices", async () => {
   const props = run("systemctl", ["show", "-p", "MemoryMax,PrivateDevices,DevicePolicy,DeviceAllow", DEPLOY]).out.trim();
   note(props.replace(/\n/g, ", "));
-  assert.match(props, /MemoryMax=1073741824/);
+  const kept = Math.floor(totalmem() / MB) - forProducts();
+  assert.match(props, new RegExp(`MemoryMax=${Math.min(1024, Math.max(192, Math.floor(kept / 2))) * MB}`));
   assert.ok(/PrivateDevices=yes/.test(props) || (/DevicePolicy=closed|DevicePolicy=strict/.test(props) && /DeviceAllow=$/m.test(props)), "devices");
 });
 

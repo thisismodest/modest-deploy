@@ -1,20 +1,22 @@
 #!/usr/bin/env node
-// modest-deploy's commands. On the server, as root: check, install, add, remove, list,
-// deploy, restart, logs, and backup. On your laptop: launch. And the ones systemd
+// modest-deploy's commands. On the server, as root: check, install, add, remove, deploy,
+// restart, resize, logs, and backup; and list, as anyone. On your computer: launch, and
+// list --server. And the ones systemd
 // runs: listen (the listener), work (the deploy service), and copy-database (backup).
 
 import { realpathSync } from "node:fs";
 import { checkServer, outsidePorts, report } from "./check.ts";
 import { answersWithin, deploy } from "./deploy.ts";
 import { helpFor, OVERVIEW, wantsHelp } from "./help.ts";
-import { launch } from "./launch.ts";
+import { launch, listServers } from "./launch.ts";
 import { createListener } from "./listener.ts";
+import { thisMachine } from "./memory.ts";
 import { isName } from "./names.ts";
 import { LISTENER_PORT, layout, productUnit } from "./paths.ts";
-import { readProduct } from "./products.ts";
+import { listProducts, readProduct } from "./products.ts";
 import { enqueue, takeOne } from "./queue.ts";
 import { must, run } from "./run.ts";
-import { add, backup, copyDatabase, install, list, remove, type Server } from "./server.ts";
+import { add, backup, copyDatabase, install, list, remove, resize, type Server } from "./server.ts";
 
 /** The words after the command, and its --options. */
 function parse(args: string[]) {
@@ -38,7 +40,7 @@ function parse(args: string[]) {
 const log = (line: string) => console.log(line);
 
 function server(): Server {
-  return { run, paths: layout(), node: process.execPath, cli: realpathSync(process.argv[1] ?? ""), log };
+  return { run, paths: layout(), node: process.execPath, cli: realpathSync(process.argv[1] ?? ""), log, machine: thisMachine() };
 }
 
 function asRoot(): void {
@@ -64,7 +66,8 @@ async function main(argv: string[]): Promise<void> {
   const { words, flag, text, domains } = parse(rest);
   switch (command) {
     case "check": {
-      if (!report(await checkServer(run, undefined, realpathSync(process.argv[1] ?? "")))) process.exitCode = 1;
+      const fleet = { products: await listProducts(layout()), machine: thisMachine() };
+      if (!report(await checkServer(run, undefined, realpathSync(process.argv[1] ?? ""), fleet))) process.exitCode = 1;
       return;
     }
     case "install":
@@ -72,19 +75,24 @@ async function main(argv: string[]): Promise<void> {
       return install(server(), text("domain"), flag("anyway"));
     case "add": {
       asRoot();
-      const added = await add(server(), product(words[0]), text("domain") ?? "", text("repo") ?? "", flag("anyway"), domains("redirect"));
+      const added = await add(server(), product(words[0]), text("domain") ?? "", text("repo") ?? "", flag("anyway"), domains("redirect"), text("memory"));
       if (flag("json")) return log(JSON.stringify(added));
       log(`Added ${added.name}. In ${added.repo}'s settings on GitHub, add:`);
       log(`  a deploy key (read-only): ${added.deployKey}`);
       log(`  a webhook: ${added.webhook}, content type application/json, the "Workflow runs" event, with this secret:`);
       log(`  ${added.secret}`);
-      log(`Then point the DNS of ${[added.domain, ...added.redirects].join(", ")} at this server. (modest-deploy launch does all of this from your laptop.)`);
+      log(`Then point the DNS of ${[added.domain, ...added.redirects].join(", ")} at this server. (modest-deploy launch does all of this from your computer.)`);
       return;
     }
-    case "list":
-      asRoot();
+    case "list": {
+      // From your computer, each server's in turn; on a server, its own (nothing in it is secret).
+      if (text("server") !== undefined) {
+        if (await listServers(run, domains("server"), log)) process.exitCode = 1;
+        return;
+      }
       for (const row of await list(server())) log(row);
       return;
+    }
     case "deploy": {
       asRoot();
       const name = product(words[0]);
@@ -96,6 +104,9 @@ async function main(argv: string[]): Promise<void> {
       asRoot();
       await must(run, "systemctl", ["restart", productUnit(product(words[0]))]);
       return;
+    case "resize":
+      asRoot();
+      return log(await resize(server(), product(words[0]), text("memory")));
     case "logs": {
       asRoot();
       const ran = await run("journalctl", ["-u", productUnit(product(words[0])), "-n", "100", "--no-pager"]);
@@ -129,6 +140,7 @@ async function main(argv: string[]): Promise<void> {
           repo: text("repo"),
           template: text("template"),
           visibility: flag("public") ? "public" : "private",
+          memory: text("memory"),
         },
         log,
       );

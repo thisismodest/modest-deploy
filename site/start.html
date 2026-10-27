@@ -57,7 +57,7 @@
             <li><a href="#need">What you need</a></li>
             <li><a href="#server">Set up the server</a></li>
             <li><a href="#install">Install modest-deploy</a></li>
-            <li><a href="#laptop">Set up your laptop</a></li>
+            <li><a href="#computer">Set up your computer</a></li>
             <li><a href="#product">Write a product</a></li>
             <li><a href="#launch">Launch it</a></li>
             <li><a href="#keys">Keys and sign-in</a></li>
@@ -71,20 +71,20 @@
           <ul class="checks">
             <li><strong>A server running Ubuntu 26.04 LTS,</strong> with at least 1GB of memory. A DigitalOcean droplet or similar is fine. 24.04 LTS also works, but it can't stop a compromised product from opening other ports (<a href="security.html#ubuntu-24">why</a>).</li>
             <li><strong>A domain</strong> you can add DNS records to: one name for each product, and one for deploys, such as <code>deploy.example.org</code>.</li>
-            <li><strong>A GitHub account,</strong> and on your laptop, Node 24 or later and GitHub's command line tool, <code>gh</code>, signed in (<code>gh auth login</code>).</li>
+            <li><strong>A GitHub account,</strong> and on your computer, Node 24 or later and GitHub's command line tool, <code>gh</code>, signed in (<code>gh auth login</code>).</li>
           </ul>
         </section>
 
         <section aria-labelledby="server">
           <h2 id="server">1. Set up the server</h2>
-          <p>You do this once. When you create the server, add your SSH key. Then sign in as root and make a user of your own (here, <code>ann</code>), with your key:</p>
+          <p>You do this once. When you create the server, add your SSH key. Then sign in as root and make a user of your own, with your key. Put your own name in place of <code>yourname</code>, here and below.</p>
           <div class="window terminal">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
-            <pre><code><span class="c">$</span> adduser ann
-<span class="c">$</span> usermod -aG sudo ann
-<span class="c">$</span> rsync --archive --chown=ann:ann ~/.ssh /home/ann</code></pre>
+            <pre><code><span class="c">$</span> adduser yourname
+<span class="c">$</span> usermod -aG sudo yourname
+<span class="c">$</span> rsync --archive --chown=yourname:yourname ~/.ssh /home/yourname</code></pre>
           </div>
-          <p>Sign in again as that user (<code>ssh ann@your-server</code>) before going on. Then turn off signing in by password, and as root:</p>
+          <p>Sign in again as that user (<code>ssh yourname@your-server</code>) before going on. Then turn off signing in by password, and as root:</p>
           <div class="window">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>/etc/ssh/sshd_config.d/10-local.conf</span></div>
             <pre><code>PasswordAuthentication no
@@ -126,8 +126,8 @@ PermitRootLogin no</code></pre>
           <p>Then add a DNS record pointing <code>deploy.example.org</code> at the server's address. Caddy gets its HTTPS certificate once the record works.</p>
         </section>
 
-        <section aria-labelledby="laptop">
-          <h2 id="laptop">3. Set up your laptop</h2>
+        <section aria-labelledby="computer">
+          <h2 id="computer">3. Set up your computer</h2>
           <div class="window terminal">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
             <pre><code><span class="c">$</span> npm install -g modest-deploy</code></pre>
@@ -137,16 +137,16 @@ PermitRootLogin no</code></pre>
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>~/.ssh/config</span></div>
             <pre><code>Host myserver
   HostName 203.0.113.7
-  User ann</code></pre>
+  User yourname</code></pre>
           </div>
           <p>
             Use your server's address and your user. <code>launch</code> runs <code>modest-deploy add</code> on the
             server with <code>sudo</code>, over SSH, where it can't ask for your password. On the server, let your
-            user run that one command without it:
+            user run that one command without it (signed in as that user, so <code>$USER</code> is your name):
           </p>
           <div class="window terminal">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
-            <pre><code><span class="c">$</span> echo "ann ALL=(root) NOPASSWD: $(which modest-deploy) add *" | sudo tee /etc/sudoers.d/modest-deploy
+            <pre><code><span class="c">$</span> echo "$USER ALL=(root) NOPASSWD: $(which modest-deploy) add *" | sudo tee /etc/sudoers.d/modest-deploy
 <span class="c">$</span> sudo chmod 440 /etc/sudoers.d/modest-deploy &amp;&amp; sudo visudo -c</code></pre>
           </div>
           <p>Everything else still asks for your password.</p>
@@ -213,10 +213,16 @@ jobs:
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
             <pre><code><span class="c">$</span> modest-deploy launch shop shop.example.org --server myserver</code></pre>
           </div>
-          <p>This creates the <code>shop</code> repository on GitHub (private, unless you add <code>--public</code>), sets the product up on the server, and connects the two. Then:</p>
+          <p>This makes a private <code>shop</code> repository on your own GitHub account (add <code>--public</code> for a public one), sets the product up on the server, and connects the two: from then on, the server fetches the code from GitHub whenever CI passes.</p>
+          <ul>
+            <li><strong>For an organisation,</strong> name it: <code>--repo your-org/shop</code>. It's made there (if you're allowed to make repositories there), or connected if it's there already. If <code>gh</code> is signed in to more than one GitHub account, it uses the active one (<code>gh auth status</code>).</li>
+            <li><strong>Already have the repository on GitHub?</strong> Launch connects that one instead of making a new one, and leaves its code alone. It looks for <code>your-username/shop</code>; for any other, add <code>--repo owner/name</code>. Run it from any folder: it works with GitHub, not with the files on your computer.</li>
+            <li><strong>Memory:</strong> the product gets 512M. If it's the only one on the server, add <code>--memory max</code> to give it everything the server can spare (<a href="docs.html#memory">more on memory</a>).</li>
+          </ul>
+          <p>Then:</p>
           <ol>
             <li>Add a DNS record pointing <code>shop.example.org</code> at the server.</li>
-            <li>Push the folder to the new repository:</li>
+            <li>For a new repository, push the folder to it:</li>
           </ol>
           <div class="window terminal">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
@@ -224,11 +230,19 @@ jobs:
 <span class="c">$</span> git remote add origin git@github.com:YOUR-USER/shop.git
 <span class="c">$</span> git push -u origin main</code></pre>
           </div>
-          <p>When CI passes, the server deploys it. Open <code>https://shop.example.org</code>, or check on the server:</p>
+          <p>
+            For one that already has your code, there's nothing to push: deploy what's on <code>main</code> now, from the server
+            (<code>-t</code> lets <code>sudo</code> ask for your password):
+          </p>
           <div class="window terminal">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
-            <pre><code><span class="c">$</span> ssh myserver sudo modest-deploy list
-<span class="c">$</span> ssh myserver sudo modest-deploy logs shop</code></pre>
+            <pre><code><span class="c">$</span> ssh -t myserver sudo modest-deploy deploy shop</code></pre>
+          </div>
+          <p>When CI passes (or once that deploy finishes), it's live. Open <code>https://shop.example.org</code>, or check on the server:</p>
+          <div class="window terminal">
+            <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
+            <pre><code><span class="c">$</span> modest-deploy list --server myserver
+<span class="c">$</span> ssh -t myserver sudo modest-deploy logs shop</code></pre>
           </div>
           <p>From now on, each push to main that passes CI deploys the new version.</p>
         </section>

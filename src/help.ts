@@ -10,15 +10,18 @@ Getting started, once per server:
   sudo modest-deploy check                       is the server set up safely? (says what to fix)
   sudo modest-deploy install --domain <domain>   install modest-deploy's own parts
   modest-deploy launch <name> <domain> --server <ssh-host>
-                                                 from your laptop: a product, live on its domain
+                                                 from your computer: a product, live on its domain
 
 Every day:
-  sudo modest-deploy list                        the products, and what each is running
+  modest-deploy list                             the products, their memory, and what each is running
+  modest-deploy list --server <a,b>              from your computer: every server's, in turn
   sudo modest-deploy logs <name>                 a product's latest log lines
   sudo modest-deploy deploy <name>               deploy main's newest commit now
   sudo modest-deploy restart <name>              restart a product (after changing its keys)
+  sudo modest-deploy resize <name> --memory <size>
+                                                 give a product more memory, or less
 
-Every command: check, install, launch, add, list, deploy, restart, logs, remove, backup.
+Every command: check, install, launch, add, list, deploy, restart, resize, logs, remove, backup.
 For one of them: modest-deploy help <command>, or modest-deploy <command> --help.
 
 Step by step, from a new server to a product live on your domain: ${DOCS}/start.html`;
@@ -28,8 +31,9 @@ const PAGES: Record<string, string> = {
   check: `modest-deploy check
 
 Checks what modest-deploy relies on, and says plainly what to fix: Node 24 or later, Caddy,
-and systemd; SSH by key only, with no root login; automatic security updates; and nothing
-listening to the outside but SSH, HTTP, and HTTPS. Changes nothing.
+and systemd; SSH by key only, with no root login; automatic security updates; nothing
+listening to the outside but SSH, HTTP, and HTTPS; and products' memory fitting in what the
+server has for them. Changes nothing.
 
 install and add won't run while a check fails, unless you add --anyway.
 
@@ -42,8 +46,10 @@ More: ${DOCS}/docs.html#before`,
 
 Installs modest-deploy's own parts on the server: the deploy listener (which GitHub's
 signed messages reach, at <deploy-domain>), the deploy service, the folder Caddy reads
-products' sites from, and the nightly backup. Run it again after updating modest-deploy:
-it rewrites every unit it made, the products' included. The domain can be left out then.
+products' sites from, and the nightly backup. Run it again after updating modest-deploy,
+or after giving the server more memory or cores: it rewrites every unit it made, the
+products' included (each sized to the server), and restarts only products whose unit
+changed. The domain can be left out then.
 
 Options:
   --domain <domain>   where GitHub's messages arrive, such as deploy.example.org
@@ -56,49 +62,96 @@ More: ${DOCS}/docs.html#install`,
 
   launch: `modest-deploy launch <name> <domain> --server <ssh-host> [options]
 
-From your laptop: makes the product's GitHub repository (from a template, if you name
+From your computer: makes the product's GitHub repository (from a template, if you name
 one), adds the product on the server over SSH, and gives GitHub the server's read-only
 deploy key and a signed webhook. Then a push to main that passes CI deploys it. Uses gh
 and ssh, as you already do. Run again, it updates what's there.
 
+It works with GitHub, not the folder you're in: run it from anywhere. If the repository
+is already on GitHub (yours called <name>, or the one --repo names), it connects that one
+instead of making one: its code isn't touched, only a deploy key and webhook added to its
+settings. To deploy what's on its main without a push, run modest-deploy deploy <name> on
+the server.
+
 Options:
   --server <ssh-host>        a host from your SSH config, or user@host
-  --repo <owner/repo>        the repository (default: yours, named <name>)
+  --repo <owner/repo>        the repository, new or already there: owner can be an organisation
+                             (default: your own account's, named <name>)
   --template <owner/repo>    make the repository from this template
   --public                   a public repository (default: private)
   --redirect <domain,...>    domains that send visitors to <domain>, such as www.
+  --memory <size>            its memory: 512M (the default), 1G, or max for all that's left
+                             (added only if it fits: see modest-deploy help add)
 
 Example:
   modest-deploy launch shop shop.example.org --server myserver --redirect www.shop.example.org
+  modest-deploy launch club club.example.org --server clubserver --memory max
+  modest-deploy launch shop shop.example.org --server myserver --repo your-org/shop
 
 More: ${DOCS}/docs.html#launch`,
 
   add: `modest-deploy add <name> --domain <domain> --repo <owner/repo> [options]
 
-On the server: adds a product, as launch does for you from your laptop. Gives it a system
+On the server: adds a product, as launch does for you from your computer. Gives it a system
 user, a folder, an environment file for its keys, a systemd service, and its domain in
 Caddy, then prints the deploy key and webhook to add on GitHub by hand. Run again, with the
 same domain and repository, to change its redirects: the secret and key stay the same.
+
+Memory: each product's is set aside for it alone, and is also its ceiling: 512M unless you
+say. The server keeps a quarter of its memory for itself (never under 384M), for the
+system, SSH, Caddy, and deploys; products share the rest, and one is added only if it fits.
+So however busy products get, the server can't run out, and one can't take another's. On a
+1GB server, that's room for one product at 512M, or two at 256M; on 4GB, about 2.9G.
+modest-deploy list shows what's given out. Each product's Node thread pool is sized to the
+server's cores, for sign-ins.
 
 Options:
   --domain <domain>          the product's domain
   --repo <owner/repo>        its GitHub repository
   --redirect <domain,...>    domains that send visitors to <domain>, such as www.
+  --memory <size>            its memory: 512M (the default), 1G, or max for all that's left
   --json                     print the result as JSON (launch reads it)
   --anyway                   go on even if check finds something to fix
 
 Example:
   sudo modest-deploy add shop --domain shop.example.org --repo example/shop
+  sudo modest-deploy add club --domain club.example.org --repo example/club --memory max
 
-More: ${DOCS}/docs.html#launch`,
+More: ${DOCS}/docs.html#launch, and ${DOCS}/docs.html#memory`,
 
-  list: `modest-deploy list
+  list: `modest-deploy list [--server <ssh-host,...>]
 
-The products on this server: each one's domain (and redirects), repository, port, whether
-it's running, and the commit it's running. Changes nothing.
+The products on this server: each one's domain (and redirects), repository, port, memory,
+whether it's running, and the commit it's running; then how much of the server's memory
+is given out. Changes nothing, and needs no sudo.
+
+From your computer, with --server: each server's list in turn, over SSH. One that doesn't
+answer is said, and the rest still listed.
+
+Options:
+  --server <ssh-host,...>    servers from your SSH config, or user@host, separated by commas
 
 Example:
-  sudo modest-deploy list`,
+  modest-deploy list
+  modest-deploy list --server shop-server,club-server
+
+More: ${DOCS}/docs.html#memory`,
+
+  resize: `modest-deploy resize <name> --memory <size>
+
+Gives a product more memory, or less. More is given only if it fits beside the other
+products' in what the server has for them; if not, it says how much there's room for, and
+nothing changes. A running product starts again with its new size (a moment's pause), and
+is checked it answers. modest-deploy list shows each product's memory, and what's left.
+
+Options:
+  --memory <size>    such as 768M or 2G (at least 128M), or max for all that's left
+
+Example:
+  sudo modest-deploy resize shop --memory 1G
+  sudo modest-deploy resize club --memory max
+
+More: ${DOCS}/docs.html#memory`,
 
   deploy: `modest-deploy deploy <name>
 

@@ -31,14 +31,16 @@ reads products' sites from, and the nightly backup.
 **Check, any time.** `modest-deploy check` checks what it relies on, and says plainly
 what to fix: Node 24 or later, Caddy, and systemd present; Node and modest-deploy
 readable by the services' own users; SSH by key only, with no root login (as SSH
-treats a connection from outside); automatic security updates on; and nothing
-listening to the outside but SSH, HTTP, and HTTPS. `install` and `add` won't run
-while a check fails, unless you add `--anyway`.
+treats a connection from outside); automatic security updates on; nothing
+listening to the outside but SSH, HTTP, and HTTPS; and products' memory fitting in
+what the server has for them. `install` and `add` won't run while a check fails,
+unless you add `--anyway`.
 
-**Launch a product, with one command from your laptop.**
+**Launch a product, with one command from your computer.**
 `modest-deploy launch <name> <domain>`:
 
-- makes the product's GitHub repository, from your template if you name one;
+- makes the product's GitHub repository, from your template if you name one (or,
+  if it's there already, uses it, adding only the deploy key and webhook below);
 - on the server, gives it a system user, a folder, an environment file for its keys,
   a systemd service, and its domain in Caddy (which gets and renews its HTTPS
   certificate);
@@ -50,6 +52,21 @@ Add `--redirect www.example.org` (or several, separated by commas) for domains t
 should send visitors to the product's own, at the same path: such as `www.`, or an
 old name. They never reach the product, and no domain can be used by two products.
 Run `add` again on the server to change them.
+
+**Memory, set aside for each product.** A product is given 512M, or what you say with
+`--memory` (such as `1G`, or `max` for all that's left). It's set aside for it alone
+and is its ceiling, and a product is added only if it fits beside the others: the
+server keeps a quarter of its memory for itself (never under 384M), for the system,
+SSH, Caddy, the listener, and deploys. So however busy products get, together they
+can't run the server out of memory, and one can't take another's. `modest-deploy
+resize <name> --memory <size>` gives one more or less, if it fits. Each product's
+Node thread pool is sized to the cores, for sign-ins (modest-auth hashes up to one
+password a core).
+
+On a 1GB server, that's 576M for products: one at 512M, or two at 256M. Run several
+products on a bigger server, or give anything with personal data or real traffic a
+server of its own. `modest-deploy list --server a,b` lists every server's products
+from your computer.
 
 **Deploy, on every push to `main` that passes CI.** GitHub sends a signed
 "workflow finished" message. The server:
@@ -119,7 +136,7 @@ sudo ln -s /opt/modest-deploy/src/cli.ts /usr/local/bin/modest-deploy
 
 Then point the deploy domain's DNS at the server: GitHub's messages arrive there. `modest-deploy --help`
 says how to get started, and `modest-deploy help <command>` gives each command's page. For
-`launch`, install it on your laptop too, the same way.
+`launch`, install it on your computer too, the same way.
 
 ## Updating modest-deploy
 

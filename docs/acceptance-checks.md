@@ -79,7 +79,7 @@ installed, with product "alpha" (and "beta" where needed) added, from a local re
 
 **A release tricking root into reading something else**
 38. `package.json` as a link to `/etc/shadow`, as a FIFO, or as a 50MB file: each refused; root's output never holds the target.
-39. The deploy unit has `MemoryMax=1G` and no devices.
+39. The deploy unit has a memory limit (its share of the server's, at most 1G) and no devices.
 
 **Redirect domains**
 40. **[PRIORITY]** A redirect that's beta's domain, beta's redirect, the deploy domain, or not a domain (`a b`, `x/../y`, `*.x`): each refused.
@@ -105,6 +105,11 @@ installed, with product "alpha" (and "beta" where needed) added, from a local re
 
 **A burst of deploy requests**
 53. 50 valid requests for alpha in a second: the deploy service never hits its start limit; main's tip ends up live.
+
+**Memory, set aside for each product** (added with 0.4.0, before the code)
+63. Alpha's unit sets aside its memory and caps it there (512M); Node in alpha sees that as its limit; its thread pool is the cores and two (at most 18); the deploy service builds within the server's own share.
+64. A product given more memory than there's room for isn't added, and leaves nothing behind; `max` gives what's left; with none left, another isn't added; `resize` gives less, and won't give more than there's room for; `list` shows each one's memory, and what's given out.
+65. With alpha given all that's left, and alpha and beta both holding on to memory until stopped, while beta deploys: SSH, Caddy, and the listener answer, beta's deploy goes live, and alpha comes back.
 
 ## README: What it does
 
