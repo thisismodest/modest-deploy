@@ -17,6 +17,8 @@ Every change that affects how it's used, or what it promises. The format follows
   it fits.
 - `modest-deploy list --server a,b`: every server's products, from your computer.
 - `check` finds products given more memory than the server has for them.
+- Without `gh`, or signed out of it, `launch` changes nothing: it says how to get it, or
+  how to do the same by hand, with the product's own `add` command for the server.
 
 ### Changed
 

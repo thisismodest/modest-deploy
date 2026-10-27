@@ -212,6 +212,48 @@ test("launch gives the server the redirects as one checked word, and asks for ea
   assert.ok(lines.some((l) => l.includes("shop.example.org, www.shop.example.org, shop.example.com")));
 });
 
+test("without gh, or signed out of it, launch changes nothing, and says how to get it, or do it by hand with this product's own command", async () => {
+  for (const [state, ran, says] of [
+    ["not installed", { code: 1, stdout: "", stderr: "spawn gh ENOENT" }, /install it[\s\S]*cli\.github\.com/i],
+    ["signed out", { code: 1, stdout: "", stderr: "You are not logged into any GitHub hosts. To log in, run: gh auth login" }, /gh auth login/],
+  ] as const) {
+    const calls: string[][] = [];
+    const run: Run = async (program, args) => {
+      calls.push([program, ...args]);
+      return program === "gh" ? ran : ok();
+    };
+    const said = await launch(
+      run,
+      {
+        name: "shop",
+        domain: "shop.example.org",
+        redirects: ["www.shop.example.org"],
+        server: "myserver",
+        repo: "example/shop",
+        template: undefined,
+        visibility: "private",
+        memory: "1G",
+      },
+      () => {},
+    ).then(
+      () => "",
+      (error: Error) => error.message,
+    );
+    assert.match(said, says, state);
+    assert.match(
+      said,
+      /ssh -t myserver sudo modest-deploy add shop --domain shop\.example\.org --repo example\/shop --redirect www\.shop\.example\.org --memory 1G/,
+      `${state}: the command by hand`,
+    );
+    assert.match(said, /deploy key[\s\S]*webhook[\s\S]*Workflow runs/, `${state}: what to add on GitHub`);
+    assert.deepEqual(
+      calls.filter((c) => c[0] !== "gh" || !["--version", "auth"].includes(c[1] ?? "")),
+      [],
+      `${state}: nothing ran but the look at gh`,
+    );
+  }
+});
+
 test("launch refuses anything unsafe before running anything", async () => {
   const calls: string[] = [];
   const run: Run = async (program) => {

@@ -42,6 +42,21 @@ export async function launch(run: Run, options: Launch, log: (line: string) => v
   };
   const gh = (args: string[], input?: string) => must(run, "gh", args, { env, ...(input === undefined ? {} : { input }) });
 
+  // gh does the GitHub half. Without it, or signed out, nothing is done: say how to get it, or do it all by hand.
+  const status = await run("gh", ["auth", "status"], { env });
+  if (status.code !== 0) {
+    const missing = /ENOENT|not found/i.test(status.stderr);
+    throw new Error(
+      [
+        missing
+          ? "launch uses gh, GitHub's command line tool, to make the repository and connect it, and it isn't installed. Install it (https://cli.github.com, or brew install gh), sign in with gh auth login, then run launch again."
+          : "launch uses gh, GitHub's command line tool, and it isn't signed in: run gh auth login, then launch again.",
+        "",
+        "Or do it by hand (nothing has been changed yet):",
+        ...byHand(options),
+      ].join("\n"),
+    );
+  }
 
   const repo = options.repo ?? `${(await gh(["api", "user", "--jq", ".login"])).trim()}/${name}`;
   if (!isRepo(repo)) throw new Error("the repository must be owner/name, as on GitHub");
@@ -134,3 +149,20 @@ export async function listServers(run: Run, servers: string[], log: (line: strin
   return failed;
 }
 
+/** What launch does, as steps to do by hand, with this product's own details. Every value has been checked. */
+function byHand({ name, domain, server, redirects = [], repo, memory }: Launch): string[] {
+  const where = repo ?? `your-username/${name}`;
+  const add = [
+    `ssh -t ${server} sudo modest-deploy add ${name} --domain ${domain} --repo ${where}`,
+    ...(redirects.length ? [`--redirect ${redirects.join(",")}`] : []),
+    ...(memory === undefined ? [] : [`--memory ${memory}`]),
+  ].join(" ");
+  return [
+    `  1. On GitHub, make the repository ${where}, if it isn't there.`,
+    "  2. Add the product on the server, which prints a deploy key, and a webhook with its secret:",
+    `       ${add}`,
+    `  3. In ${where}'s settings on GitHub: add the deploy key (Deploy keys, read-only), and the webhook`,
+    `     (Webhooks: its address, content type application/json, the secret, and only the "Workflow runs" event).`,
+    `  4. Point the DNS of ${[domain, ...redirects].join(", ")} at the server, and push to main.`,
+  ];
+}

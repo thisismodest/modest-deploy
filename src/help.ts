@@ -65,7 +65,8 @@ More: ${DOCS}/docs.html#install`,
 From your computer: makes the product's GitHub repository (from a template, if you name
 one), adds the product on the server over SSH, and gives GitHub the server's read-only
 deploy key and a signed webhook. Then a push to main that passes CI deploys it. Uses gh
-and ssh, as you already do. Run again, it updates what's there.
+and ssh, as you already do. Run again, it updates what's there. Without gh (or signed out
+of it), it changes nothing, and says how to get it, or do the same by hand.
 
 It works with GitHub, not the folder you're in: run it from anywhere. If the repository
 is already on GitHub (yours called <name>, or the one --repo names), it connects that one

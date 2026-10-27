@@ -117,7 +117,7 @@
             <li><strong>Connects them:</strong> gives GitHub the server's read-only deploy key, and a webhook for the "Workflow runs" event, signed with a secret made for this product.</li>
             <li><strong>Tells you what's left:</strong> point the domain's DNS at the server, and push.</li>
           </ol>
-          <p>On the server, <code>modest-deploy add</code> does the second step alone, and prints what to add on GitHub by hand.</p>
+          <p>Without <code>gh</code>, or signed out of it, launch changes nothing: it says how to get it, and prints the same steps to do by hand, with your product's own <code>modest-deploy add</code> command for the server, which prints what to add on GitHub.</p>
           <p>
             Add <code>--redirect www.shop.example.org</code> (or several, separated by commas) for domains that send visitors to the
             product's own, at the same path. They never reach the product, and no domain can be used by two products. Run
