@@ -69,9 +69,9 @@
         <section aria-labelledby="need">
           <h2 id="need">What you need</h2>
           <ul class="checks">
-            <li><strong>A server running Ubuntu 26.04 LTS,</strong> with at least 1GB of memory. A DigitalOcean droplet or similar is fine. 24.04 LTS also works, but it can't stop a compromised product from opening other ports (<a href="security.html#ubuntu-24">why</a>).</li>
-            <li><strong>A domain</strong> you can add DNS records to: one name for each product, and one for deploys, such as <code>deploy.example.org</code>.</li>
-            <li><strong>A GitHub account,</strong> and on your computer, Node 24 or later and, ideally, GitHub's command line tool, <code>gh</code>, signed in (<code>gh auth login</code>). Launch uses it to make the repository and connect it in one go. Without it, launch changes nothing and prints the steps to do by hand instead, with your product's own command to run.</li>
+            <li><strong>A server running Ubuntu 26.04 LTS,</strong> with at least 1GB of memory. A DigitalOcean droplet or similar is fine. 24.04 LTS also works, but it can't stop a compromised app from opening other ports (<a href="security.html#ubuntu-24">why</a>).</li>
+            <li><strong>A domain</strong> you can add DNS records to: one name for each app, and one for deploys, such as <code>deploy.example.org</code>.</li>
+            <li><strong>A GitHub account,</strong> and on your computer, Node 26 (24 or later works) and, ideally, GitHub's command line tool, <code>gh</code>, signed in (<code>gh auth login</code>). Launch uses it to make the repository and connect it in one go. Without it, launch changes nothing and prints the steps to do by hand instead, with your app's own command to run.</li>
           </ul>
         </section>
 
@@ -102,10 +102,10 @@ PermitRootLogin no</code></pre>
           </p>
           <div class="window terminal">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
-            <pre><code><span class="c">$</span> curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+            <pre><code><span class="c">$</span> curl -fsSL https://deb.nodesource.com/setup_26.x | sudo -E bash -
 <span class="c">$</span> sudo apt install -y nodejs caddy unattended-upgrades</code></pre>
           </div>
-          <p>The first line adds <a href="https://github.com/nodesource/distributions">NodeSource's</a> package repository for Node 24. Caddy comes from Ubuntu's own packages.</p>
+          <p>The first line adds <a href="https://github.com/nodesource/distributions">NodeSource's</a> package repository for Node 26, the current long-term release. Caddy comes from Ubuntu's own packages.</p>
         </section>
 
         <section aria-labelledby="install">
@@ -213,7 +213,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
       - run: node --check server.js</code></pre>
           </div>
           <p>

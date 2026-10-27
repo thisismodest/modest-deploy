@@ -99,7 +99,7 @@ export async function checkServer(
   const works = async (program: string, args: string[]) => (await run(program, args)).code === 0;
 
   const major = Number(process.versions.node.split(".")[0]);
-  add(major >= 24, `Node 24 or later (this is ${process.versions.node})`, "install Node 24 or later, from NodeSource or nodejs.org");
+  add(major >= 24, `Node 24 or later (this is ${process.versions.node})`, "install Node 26 (24 or later works), from NodeSource or nodejs.org");
   add(process.getuid?.() === 0, "running as root", "run it with sudo: it makes users, services, and Caddy sites");
   add(await works("systemctl", ["--version"]), "systemd", "modest-deploy needs a server that runs systemd, such as Ubuntu");
   add(await works("caddy", ["version"]), "Caddy installed", "install Caddy from its own package repository: see caddyserver.com/docs/install");

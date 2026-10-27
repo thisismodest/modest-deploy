@@ -112,7 +112,7 @@ Ubuntu 26.04 LTS server:
 - a firewall that lets in only SSH (from your own address, if you can), HTTP, and
   HTTPS;
 - automatic security updates on (`unattended-upgrades`);
-- Node 24 or later, and Caddy, from their own package repositories.
+- Node 26 (24 or later works), and Caddy, from their own package repositories.
 
 24.04 LTS also works, but it can't stop a compromised app from opening other
 ports (see the threat model's known limits).

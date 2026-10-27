@@ -33,7 +33,7 @@ Open an issue first for anything beyond a small fix, and say:
 
 ## Working on it
 
-Node 24 or later.
+Node 26 (24 or later works).
 
 ```sh
 npm ci            # development tools only; install scripts are off (.npmrc)

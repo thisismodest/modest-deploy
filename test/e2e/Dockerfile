@@ -8,10 +8,10 @@ RUN apt-get update \
     iproute2 unattended-upgrades caddy sudo tar \
  && rm -rf /var/lib/apt/lists/*
 
-# Node 24, from nodejs.org.
+# Node 26, from nodejs.org, as the getting-started guide installs it.
 RUN arch="$(dpkg --print-architecture)"; case "$arch" in amd64) arch=x64;; esac; \
-    version="$(curl -fsSL https://nodejs.org/dist/latest-v24.x/SHASUMS256.txt | grep -o "node-v24[^ ]*-linux-$arch.tar.xz" | head -1)"; \
-    curl -fsSL "https://nodejs.org/dist/latest-v24.x/$version" | tar -xJ -C /usr/local --strip-components=1
+    version="$(curl -fsSL https://nodejs.org/dist/latest-v26.x/SHASUMS256.txt | grep -o "node-v26[^ ]*-linux-$arch.tar.xz" | head -1)"; \
+    curl -fsSL "https://nodejs.org/dist/latest-v26.x/$version" | tar -xJ -C /usr/local --strip-components=1
 
 # SSH by key only, no root sign-in; automatic updates on.
 RUN printf 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin no\n' > /etc/ssh/sshd_config.d/10-safe.conf \

@@ -23,8 +23,14 @@ Every change that affects how it's used, or what it promises. The format follows
 
 ### Changed
 
-- `list` shows each product's memory and how much is given out, and needs no sudo.
-- Each product's Node thread pool is sized to the server's cores (the cores and two, at
+- What modest-deploy deploys is called an app, as most tools call it, not a product: in
+  its commands, messages, and documents, and on the server, where apps' settings are in
+  `/etc/modest-deploy/apps/`. `install` moves an older server's `products/` there, once.
+- Node 26, the current long-term release, is what the getting-started guide installs,
+  what releases are built with, and what the end-to-end checks run on. 24 or later
+  still works, and CI tests 24, 26, and the latest.
+- `list` shows each app's memory and how much is given out, and needs no sudo.
+- Each app's Node thread pool is sized to the server's cores (the cores and two, at
   most 18), so modest-auth 0.5.0 and later can hash a password on each core.
 - The deploy service builds within its share of the server's own memory (from 192M to
   1G), not a fixed 1G: on a small server, a build no longer takes apps' memory.
