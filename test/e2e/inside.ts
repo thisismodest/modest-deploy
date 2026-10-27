@@ -179,7 +179,11 @@ for (const [what, result] of Object.entries(probe)) {
   // SocketBindDeny needs systemd built with its BPF framework: Ubuntu 26.04's is, 24.04's isn't.
   else if (what !== "listen on another port" || withBpf) assert.notEqual(result, "allowed", what);
 }
-ok(withBpf ? "it can write its own data, and nothing else, not even listen on another port" : "it can write its own data, and nothing else it tried (but another port: see the threat model's known limits)");
+ok(
+  withBpf
+    ? "it can write its own data, and nothing else, not even listen on another port"
+    : "it can write its own data, and nothing else it tried (but another port: see the threat model's known limits)",
+);
 
 step("each product's build user reaches only its own key and source");
 for (const path of ["/etc/modest-deploy/keys/blog", "/srv/modest-deploy/blog/source.git/HEAD", "/etc/modest-deploy/secrets/blog"]) {

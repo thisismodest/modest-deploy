@@ -1,6 +1,7 @@
 #!/bin/sh
 # The end-to-end test: builds modest-deploy, starts a fresh Ubuntu server with systemd in
-# Docker, and runs test/e2e/inside.ts in it. Needs Docker, and network access (for
+# Docker, and runs test/e2e/inside.ts in it, then the acceptance checks (checks.ts, and
+# rules.ts here, for docs/acceptance-checks.md). Needs Docker, and network access (for
 # Node, Caddy, npm, and GitHub's published host keys).
 #
 #   sh test/e2e/run.sh            (add --keep to leave the server running afterwards)
@@ -9,6 +10,9 @@ set -eu
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$here/../.."
 name=modest-deploy-e2e
+
+# Check 44 needs no server: the repository's rules, against fixtures.
+node "$here/rules.ts"
 
 docker build -q -t "$name" "$here" >/dev/null
 docker rm -f "$name" >/dev/null 2>&1 || true
@@ -23,4 +27,7 @@ docker exec "$name" mkdir -p /e2e /opt/modest-deploy
 docker exec "$name" sh -c 'chmod 755 /opt/modest-deploy/src/cli.ts && ln -s /opt/modest-deploy/src/cli.ts /usr/local/bin/modest-deploy'
 docker cp "$here/inside.ts" "$name":/e2e/inside.ts
 docker cp "$here/product.js" "$name":/e2e/product.js
+docker cp "$here/checks.ts" "$name":/e2e/checks.ts
+docker cp "$here/probe.js" "$name":/e2e/probe.js
 docker exec "$name" node /e2e/inside.ts
+docker exec "$name" node /e2e/checks.ts
