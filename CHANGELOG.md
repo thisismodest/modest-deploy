@@ -6,6 +6,8 @@ Every change that affects how it's used, or what it promises. The format follows
 
 ## Unreleased
 
+## [0.3.0] - 2026-10-27
+
 ### Added
 
 - Help in the terminal: `modest-deploy`, `-h`, or `--help` says how to get started, and
