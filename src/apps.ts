@@ -61,6 +61,9 @@ export async function readApp(paths: Layout, name: string): Promise<App | null> 
   return checked(value, name);
 }
 
+/** Every app but `name`: the ones it must fit beside. */
+export const otherApps = async (paths: Layout, name: string) => (await listApps(paths)).filter((app) => app.name !== name);
+
 /** Every app, by name. One with broken settings is said in the log, and skipped. */
 export async function listApps(paths: Layout): Promise<App[]> {
   const files = await readdir(paths.apps).catch(() => [] as string[]);

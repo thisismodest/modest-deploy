@@ -46,6 +46,9 @@ export function parseMemory(text: unknown): number | "max" | null {
 export const isMemory = (value: unknown): value is number =>
   typeof value === "number" && Number.isInteger(value) && value >= LEAST_MEMORY && value <= MOST_MEMORY;
 
+/** The memory given to these apps, together. */
+export const memoryGiven = (apps: { memory: number }[]) => apps.reduce((sum, app) => sum + app.memory, 0);
+
 /** The least a server should leave for apps, so it can run one small one: under this, check says it's too small. */
 export const LEAST_FOR_APPS = 256;
 
@@ -61,7 +64,7 @@ export const tooSmall = (machine: Machine) => {
  * that's left if that's less. `others` excludes the app itself.
  */
 export function allot(asked: number | "max" | "default", others: { memory: number }[], machine: Machine): number {
-  const room = shares(machine).apps - others.reduce((sum, p) => sum + p.memory, 0);
+  const room = shares(machine).apps - memoryGiven(others);
   if (room < LEAST_MEMORY) {
     throw new Error(
       others.length

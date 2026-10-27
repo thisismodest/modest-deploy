@@ -10,6 +10,14 @@ export function layout(root = "") {
   const at = (...parts: string[]) => join(root || "/", ...parts);
   return {
     root,
+    /** modest-deploy's own folders, each holding a part for every app. */
+    settings: at("etc/modest-deploy"),
+    allCode: at("srv/modest-deploy"),
+    allData: at("var/lib/modest-deploy"),
+    allBackups: at("var/backups/modest-deploy"),
+    spool: at("var/spool/modest-deploy"),
+    /** A file npm is told to read its settings from, which never exists: so it reads none. */
+    noNpmrc: at("etc/modest-deploy/npmrc"),
     /** The server's own settings: the deploy domain. */
     host: at("etc/modest-deploy/host.json"),
     /** One settings file per app: its domain, repository, and port. */
@@ -61,5 +69,11 @@ export const LISTENER_USER = "modest-deploy";
 export const appUser = (name: string) => `md-${name}`;
 export const buildUser = (name: string) => `mb-${name}`;
 export const appUnit = (name: string) => `modest-deploy-${name}.service`;
+/** modest-deploy's own units (names.ts keeps apps from taking these names). */
+export const LISTENER_UNIT = "modest-deploy-listener.service";
+export const DEPLOY_UNIT = "modest-deploy-deploy.service";
+export const DEPLOY_PATH_UNIT = "modest-deploy-deploy.path";
+export const BACKUP_UNIT = "modest-deploy-backup.service";
+export const BACKUP_TIMER_UNIT = "modest-deploy-backup.timer";
 /** Where the listener listens, behind Caddy. */
 export const LISTENER_PORT = 9327;

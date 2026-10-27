@@ -4,15 +4,26 @@
 
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { chmod, chown, mkdir, open, readdir, readFile, rename, rm, stat, statfs } from "node:fs/promises";
+import { chmod, chown, mkdir, open, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import { type App, areRedirects, freePort, listApps, MOST_REDIRECTS, readApp, readHost, saveApp, takenDomain } from "./apps.ts";
+import { type App, areRedirects, freePort, listApps, MOST_REDIRECTS, otherApps, readApp, readHost, saveApp, takenDomain } from "./apps.ts";
 import { checkServer, report } from "./check.ts";
-import { answersWithin, running } from "./deploy.ts";
+import { answersWithin, freeBytes, KEEP_FREE, running } from "./deploy.ts";
 import { exists, writeWhole } from "./files.ts";
-import { allot, type Machine, parseMemory, shares, sizeText } from "./memory.ts";
+import { allot, type Machine, memoryGiven, parseMemory, shares, sizeText } from "./memory.ts";
 import { isDomain, isName, isRepo } from "./names.ts";
-import { appUnit, appUser, buildUser, type Layout, LISTENER_USER } from "./paths.ts";
+import {
+  appUnit,
+  appUser,
+  BACKUP_TIMER_UNIT,
+  BACKUP_UNIT,
+  buildUser,
+  DEPLOY_PATH_UNIT,
+  DEPLOY_UNIT,
+  type Layout,
+  LISTENER_UNIT,
+  LISTENER_USER,
+} from "./paths.ts";
 import { must, type Run } from "./run.ts";
 import { appService, appSite, BACKUP_TIMER, backupService, caddyImport, deployPath, deployService, hostSite, listenerService } from "./units.ts";
 
@@ -28,6 +39,17 @@ async function uid(server: Server, user: string): Promise<number> {
   return Number((await must(server.run, "id", ["-u", user])).trim());
 }
 
+async function gid(server: Server, group: string): Promise<number> {
+  return Number((await must(server.run, "id", ["-g", group])).trim());
+}
+
+/** Restarts an app if it's running, and says whether it answers after; null if it wasn't running. */
+async function restartIfRunning(server: Server, app: App): Promise<boolean | null> {
+  if ((await server.run("systemctl", ["is-active", "--quiet", appUnit(app.name)])).code !== 0) return null;
+  await server.run("systemctl", ["restart", appUnit(app.name)]);
+  return answersWithin(app.port);
+}
+
 /** A system user with no shell, no password, and no way to sign in; made once. */
 async function systemUser(server: Server, user: string, home = "/nonexistent"): Promise<void> {
   if ((await server.run("id", ["-u", user])).code === 0) return;
@@ -38,7 +60,7 @@ async function systemUser(server: Server, user: string, home = "/nonexistent"): 
 async function folder(server: Server, path: string, mode: number, owner?: string): Promise<void> {
   await mkdir(path, { recursive: true });
   await chmod(path, mode);
-  if (owner) await chown(path, await uid(server, owner), Number((await must(server.run, "id", ["-g", owner])).trim()));
+  if (owner) await chown(path, await uid(server, owner), await gid(server, owner));
 }
 
 /** Checks Caddy can read its settings with this change, and reloads it; if it can't, the change is undone. */
@@ -122,20 +144,20 @@ export async function install(server: Server, given: string | undefined, anyway 
   await checked(server, anyway);
   await systemUser(server, LISTENER_USER);
 
-  await folder(server, "/etc/modest-deploy", 0o755);
+  await folder(server, paths.settings, 0o755);
   await moveOldSettings(paths);
   await folder(server, paths.apps, 0o755);
   await folder(server, paths.secrets, 0o750, LISTENER_USER);
-  await chown(paths.secrets, 0, Number((await must(run, "id", ["-g", LISTENER_USER])).trim()));
+  await chown(paths.secrets, 0, await gid(server, LISTENER_USER));
   // Passed through, never listed: each key inside is its own build user's alone.
   await folder(server, paths.keys, 0o711);
   await folder(server, paths.envs, 0o700);
   await folder(server, paths.caddy, 0o755);
-  await folder(server, "/srv/modest-deploy", 0o755);
-  await folder(server, "/var/lib/modest-deploy", 0o755);
-  await folder(server, "/var/backups/modest-deploy", 0o700);
+  await folder(server, paths.allCode, 0o755);
+  await folder(server, paths.allData, 0o755);
+  await folder(server, paths.allBackups, 0o700);
   await folder(server, paths.buildHomes, 0o711);
-  await folder(server, "/var/spool/modest-deploy", 0o700, LISTENER_USER);
+  await folder(server, paths.spool, 0o700, LISTENER_USER);
   await folder(server, paths.writing, 0o700, LISTENER_USER);
   await folder(server, paths.requests, 0o700, LISTENER_USER);
 
@@ -156,11 +178,11 @@ export async function install(server: Server, given: string | undefined, anyway 
   }
   await writeWhole(paths.host, `${JSON.stringify({ domain }, null, 2)}\n`);
 
-  await writeWhole(paths.unit("modest-deploy-listener.service"), listenerService(paths, node, cli));
-  await writeWhole(paths.unit("modest-deploy-deploy.service"), deployService(node, cli, server.machine));
-  await writeWhole(paths.unit("modest-deploy-deploy.path"), deployPath(paths));
-  await writeWhole(paths.unit("modest-deploy-backup.service"), backupService(node, cli));
-  await writeWhole(paths.unit("modest-deploy-backup.timer"), BACKUP_TIMER);
+  await writeWhole(paths.unit(LISTENER_UNIT), listenerService(paths, node, cli));
+  await writeWhole(paths.unit(DEPLOY_UNIT), deployService(node, cli, server.machine));
+  await writeWhole(paths.unit(DEPLOY_PATH_UNIT), deployPath(paths));
+  await writeWhole(paths.unit(BACKUP_UNIT), backupService(node, cli));
+  await writeWhole(paths.unit(BACKUP_TIMER_UNIT), BACKUP_TIMER);
   // Apps' units are rewritten only if they've changed, and only those apps restarted.
   const apps = await listApps(paths);
   const changed: App[] = [];
@@ -171,12 +193,11 @@ export async function install(server: Server, given: string | undefined, anyway 
     changed.push(app);
   }
   await must(run, "systemctl", ["daemon-reload"]);
-  await must(run, "systemctl", ["enable", "--now", "modest-deploy-listener.service", "modest-deploy-deploy.path", "modest-deploy-backup.timer"]);
-  await must(run, "systemctl", ["restart", "modest-deploy-listener.service"]);
+  await must(run, "systemctl", ["enable", "--now", LISTENER_UNIT, DEPLOY_PATH_UNIT, BACKUP_TIMER_UNIT]);
+  await must(run, "systemctl", ["restart", LISTENER_UNIT]);
   for (const app of changed) {
-    if ((await run("systemctl", ["is-active", "--quiet", appUnit(app.name)])).code !== 0) continue;
-    await run("systemctl", ["restart", appUnit(app.name)]);
-    const answering = await answersWithin(app.port);
+    const answering = await restartIfRunning(server, app);
+    if (answering === null) continue;
     server.log(
       answering
         ? `${app.name}: restarted with its updated unit, and answering.`
@@ -220,7 +241,7 @@ export async function add(
   if (existing && (existing.domain !== domain || existing.repo.toLowerCase() !== repo.toLowerCase())) {
     throw new Error(`there's already an app called ${name}, for ${existing.domain} and ${existing.repo}`);
   }
-  const others = (await listApps(paths)).filter((p) => p.name !== name);
+  const others = await otherApps(paths, name);
   const taken = takenDomain({ name, domain, redirects }, others, host);
   if (taken) throw new Error(`${taken} is already in use here`);
   // Memory is given out only if it fits beside the others'; an app added again keeps its own unless told.
@@ -249,7 +270,7 @@ export async function add(
     secret = randomBytes(32).toString("hex");
     await writeWhole(paths.secret(name), secret, 0o640);
   }
-  await chown(paths.secret(name), 0, Number((await must(run, "id", ["-g", LISTENER_USER])).trim()));
+  await chown(paths.secret(name), 0, await gid(server, LISTENER_USER));
   let deployKey = existing ? (await readFile(`${paths.key(name)}.pub`, "utf8").catch(() => "")).trim() : "";
   if (!deployKey) {
     await rm(paths.key(name), { force: true });
@@ -304,7 +325,7 @@ export async function list(server: Server): Promise<string[]> {
     rows.push(`${p.name}  https://${p.domain}${from}  ${p.repo}  port ${p.port}  ${sizeText(p.memory)}  ${state}  ${commit}`);
   }
   const { reserve, apps: room } = shares(server.machine);
-  const given = apps.reduce((sum, p) => sum + p.memory, 0);
+  const given = memoryGiven(apps);
   rows.push(`Memory: ${sizeText(given)} of ${sizeText(room)} given to apps (the server keeps ${sizeText(reserve)} for itself).`);
   return rows;
 }
@@ -319,15 +340,15 @@ export async function resize(server: Server, name: string, memory: string | unde
   if (!app) throw new Error(`there's no app called ${name}`);
   const asked = parseMemory(memory);
   if (asked === null) throw new Error("say how much: --memory 512M, --memory 1G (at least 128M), or --memory max");
-  const others = (await listApps(paths)).filter((p) => p.name !== name);
+  const others = await otherApps(paths, name);
   const given = allot(asked, others, server.machine);
   const resized = { ...app, memory: given };
   await writeWhole(paths.unit(appUnit(name)), appService(paths, resized, node, server.machine));
   await saveApp(paths, resized);
   await must(run, "systemctl", ["daemon-reload"]);
-  if ((await run("systemctl", ["is-active", "--quiet", appUnit(name)])).code !== 0) return `${name} now has ${sizeText(given)}, from its next start.`;
-  await run("systemctl", ["restart", appUnit(name)]);
-  return (await answersWithin(app.port))
+  const answering = await restartIfRunning(server, resized);
+  if (answering === null) return `${name} now has ${sizeText(given)}, from its next start.`;
+  return answering
     ? `${name} now has ${sizeText(given)}: restarted, and answering.`
     : `${name} now has ${sizeText(given)}, but isn't answering since it restarted: see modest-deploy logs ${name}`;
 }
@@ -368,8 +389,7 @@ export async function backup(server: Server, today = new Date().toISOString().sl
         const named = relative(paths.data(app.name), db);
         const size = (await stat(db)).size;
         await mkdir(paths.backups(app.name), { recursive: true, mode: 0o700 });
-        const free = await statfs(paths.backups(app.name));
-        if (free.bavail * free.bsize < size * 2 + 1024 ** 3) {
+        if ((await freeBytes(paths.backups(app.name))) < size * 2 + KEEP_FREE) {
           failure(app.name, named, "too little room on the disk (it keeps 1GB free)");
           continue;
         }

@@ -69,7 +69,7 @@ function asBuilder(deps: Deps, app: App) {
     GIT_CONFIG_GLOBAL: "/dev/null",
     npm_config_userconfig: "/dev/null",
     // A path that doesn't exist, in a folder only root can write: npm reads nothing (it won't take /dev/null twice).
-    npm_config_globalconfig: "/etc/modest-deploy/npmrc",
+    npm_config_globalconfig: paths.noNpmrc,
     npm_config_git: "git",
     npm_config_ignore_scripts: "true",
     npm_config_registry: "https://registry.npmjs.org/",
@@ -129,10 +129,11 @@ async function noHardLinks(dir: string): Promise<void> {
 /** The most a release's files may come to, and how many there may be, before it's refused. */
 const MOST_BYTES = 1024 ** 3;
 const MOST_FILES = 200_000;
-/** What's always left free on the disk the apps share. */
-const KEEP_FREE = 1024 ** 3;
+/** What's always left free on the disk the apps share: deploys and backups both keep it. */
+export const KEEP_FREE = 1024 ** 3;
 
-const freeBytes = async (path: string) => {
+/** The space free on the disk `path` is on, in bytes. */
+export const freeBytes = async (path: string) => {
   const found = await statfs(path);
   return found.bavail * found.bsize;
 };

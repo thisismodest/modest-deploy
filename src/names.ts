@@ -2,8 +2,12 @@
 // unit name, a user name, a Caddy file, or an argument. Each is strict enough that
 // nothing matching it can mean anything else (no "/", "..", spaces, or quotes).
 
+/** modest-deploy's own units are named modest-deploy-<these>, as an app's is modest-deploy-<name>: no app can take one. */
+const OWN = new Set(["listener", "deploy", "backup"]);
+
 /** An app's name: lowercase letters, digits, and hyphens, 2 to 29 long (so "md-" + name fits a 32-character user name). */
-export const isName = (value: unknown): value is string => typeof value === "string" && /^[a-z][a-z0-9-]{0,27}[a-z0-9]$/.test(value) && !value.includes("--");
+export const isName = (value: unknown): value is string =>
+  typeof value === "string" && /^[a-z][a-z0-9-]{0,27}[a-z0-9]$/.test(value) && !value.includes("--") && !OWN.has(value);
 
 /** A domain: lowercase labels of letters, digits, and hyphens, at least two, ending in letters. */
 export const isDomain = (value: unknown): value is string =>

@@ -78,6 +78,8 @@ test("messages of any shape are ignored without throwing", () => {
 test("names, domains, repositories, commits, and ports only match what's safe in a path, a unit, or an argument", () => {
   for (const good of ["ab", "shop", "ware-business-club", "a1"]) assert.ok(isName(good), good);
   for (const bad of ["", "a", "-a", "a-", "A", "a--b", "a_b", "a.b", "../x", "a/b", "a b", "x".repeat(30), "1shop"]) assert.ok(!isName(bad), bad);
+  // modest-deploy's own units are modest-deploy-listener, -deploy, and -backup: an app of one of those names would replace one.
+  for (const own of ["listener", "deploy", "backup"]) assert.ok(!isName(own), `${own}: one of modest-deploy's own`);
   for (const good of ["example.org", "shop.example.org", "xn--bcher-kva.example", "a-b.co.uk"]) assert.ok(isDomain(good), good);
   for (const bad of [
     "",

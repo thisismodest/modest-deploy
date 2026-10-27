@@ -13,7 +13,7 @@ import { launch, listServers } from "./launch.ts";
 import { createListener } from "./listener.ts";
 import { sizeText, thisMachine } from "./memory.ts";
 import { isName } from "./names.ts";
-import { appUnit, LISTENER_PORT, layout } from "./paths.ts";
+import { appUnit, BACKUP_UNIT, DEPLOY_UNIT, LISTENER_PORT, layout } from "./paths.ts";
 import { enqueue, takeOne } from "./queue.ts";
 import { must, run } from "./run.ts";
 import { add, backup, copyDatabase, install, list, remove, resize, type Server } from "./server.ts";
@@ -100,7 +100,7 @@ async function main(argv: string[]): Promise<void> {
       const name = app(words[0]);
       if (!(await readApp(layout(), name))) throw new Error(`there's no app called ${name}`);
       await enqueue(layout(), name, "tip");
-      return log(`Asked to deploy ${name}. Follow it with: journalctl -fu modest-deploy-deploy.service`);
+      return log(`Asked to deploy ${name}. Follow it with: journalctl -fu ${DEPLOY_UNIT}`);
     }
     case "restart":
       asRoot();
@@ -125,10 +125,10 @@ async function main(argv: string[]): Promise<void> {
     case "backup": {
       // Through systemd, so it never runs twice at once (the nightly one and this).
       asRoot();
-      const ran = await run("systemctl", ["start", "modest-deploy-backup.service"], { timeout: 6 * 60 * 60_000 });
-      const said = await run("journalctl", ["-u", "modest-deploy-backup.service", "-n", "20", "--no-pager", "-o", "cat", "--since", "-6h"]);
+      const ran = await run("systemctl", ["start", BACKUP_UNIT], { timeout: 6 * 60 * 60_000 });
+      const said = await run("journalctl", ["-u", BACKUP_UNIT, "-n", "20", "--no-pager", "-o", "cat", "--since", "-6h"]);
       log(said.stdout.trimEnd().split("\n").slice(-10).join("\n"));
-      if (ran.code !== 0) throw new Error("some copies weren't made: see journalctl -u modest-deploy-backup.service");
+      if (ran.code !== 0) throw new Error(`some copies weren't made: see journalctl -u ${BACKUP_UNIT}`);
       return;
     }
     case "launch":

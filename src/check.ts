@@ -3,7 +3,7 @@
 
 import { readdir, readFile } from "node:fs/promises";
 import { basename, dirname } from "node:path";
-import { LEAST_FOR_APPS, type Machine, shares, sizeText, tooSmall } from "./memory.ts";
+import { LEAST_FOR_APPS, type Machine, memoryGiven, shares, sizeText, tooSmall } from "./memory.ts";
 import type { Run } from "./run.ts";
 
 export type Finding = { ok: boolean; what: string; fix: string };
@@ -198,7 +198,7 @@ export async function checkServer(
 
   if (fleet) {
     add(shares(fleet.machine).apps >= LEAST_FOR_APPS, "memory enough to run an app", tooSmall(fleet.machine));
-    const given = fleet.apps.reduce((sum, p) => sum + p.memory, 0);
+    const given = memoryGiven(fleet.apps);
     const room = shares(fleet.machine).apps;
     add(
       given <= room,

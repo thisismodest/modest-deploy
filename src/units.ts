@@ -4,7 +4,7 @@
 import { type App, areRedirects } from "./apps.ts";
 import { isMemory, type Machine, shares, threadPoolFor } from "./memory.ts";
 import { isDomain, isName, isPort } from "./names.ts";
-import { appUser, type Layout, LISTENER_PORT, LISTENER_USER } from "./paths.ts";
+import { appUser, DEPLOY_UNIT, type Layout, LISTENER_PORT, LISTENER_USER } from "./paths.ts";
 
 /** What systemd takes away from every service modest-deploy runs: whatever a Node server doesn't need. */
 const SANDBOX = `NoNewPrivileges=yes
@@ -76,7 +76,7 @@ RestartMaxDelaySec=60
 ${SANDBOX}
 SocketBindAllow=tcp:${port}
 SocketBindDeny=any
-InaccessiblePaths=-${paths.apps} -${paths.secrets} -${paths.keys} -${paths.envs} -/var/backups/modest-deploy -/var/spool/modest-deploy
+InaccessiblePaths=-${paths.apps} -${paths.secrets} -${paths.keys} -${paths.envs} -${paths.allBackups} -${paths.spool}
 MemoryMax=${memory}M
 MemoryLow=${memory}M
 TasksMax=256
@@ -102,8 +102,8 @@ ExecStart=${node} ${cli} listen
 Restart=always
 RestartSec=2
 ${SANDBOX}
-ReadWritePaths=/var/spool/modest-deploy
-InaccessiblePaths=-${paths.keys} -${paths.envs} -/var/backups/modest-deploy -/var/lib/modest-deploy -/srv/modest-deploy
+ReadWritePaths=${paths.spool}
+InaccessiblePaths=-${paths.keys} -${paths.envs} -${paths.allBackups} -${paths.allData} -${paths.allCode}
 SocketBindAllow=tcp:${LISTENER_PORT}
 SocketBindDeny=any
 IPAddressAllow=localhost
@@ -150,7 +150,7 @@ Description=modest-deploy: deploy when asked
 
 [Path]
 DirectoryNotEmpty=${paths.requests}
-Unit=modest-deploy-deploy.service
+Unit=${DEPLOY_UNIT}
 
 [Install]
 WantedBy=paths.target
