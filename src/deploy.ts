@@ -127,7 +127,7 @@ async function noHardLinks(dir: string): Promise<void> {
 }
 
 /** The most a release's files may come to, and how many there may be, before it's refused. */
-const MOST_BYTES = 1024 ** 3;
+const MOST_RELEASE_BYTES = 1024 ** 3;
 const MOST_FILES = 200_000;
 /** What's always left free on the disk the apps share: deploys and backups both keep it. */
 export const KEEP_FREE = 1024 ** 3;
@@ -146,7 +146,7 @@ async function roomFor(deps: Deps, app: App, commit: string): Promise<void> {
   const listing = await asBuilder(deps, app)("git", ["--git-dir", deps.paths.source(app.name), "ls-tree", "-r", "-l", "--full-tree", commit]);
   const lines = listing.split("\n").filter(Boolean);
   const bytes = lines.reduce((sum, line) => sum + (Number(line.split(/\s+/)[3]) || 0), 0);
-  if (lines.length > MOST_FILES || bytes > MOST_BYTES)
+  if (lines.length > MOST_FILES || bytes > MOST_RELEASE_BYTES)
     throw new Error(`it's too large to build: ${lines.length} files, ${Math.round(bytes / 1024 ** 2)}MB (at most ${MOST_FILES} files, and 1GB)`);
   const free = await freeBytes(deps.paths.releases(app.name));
   if (free < bytes * 2 + KEEP_FREE)

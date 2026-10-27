@@ -58,23 +58,23 @@ export function checkAppInput(input: {
 
 /** A domain of this app's already used here (another app's, or the deploy domain), or null. */
 export function takenDomain(app: Pick<App, "name" | "domain" | "redirects">, others: App[], host: Host): string | null {
-  const used = new Set([host.domain, ...others.filter((p) => p.name !== app.name).flatMap((p) => [p.domain, ...p.redirects])]);
+  const used = new Set([host.domain, ...others.filter((other) => other.name !== app.name).flatMap((other) => [other.domain, ...other.redirects])]);
   return [app.domain, ...app.redirects].find((d) => used.has(d)) ?? null;
 }
 
-function checked(value: unknown, name: string): App {
-  const p = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
-  if (p.name !== name || !isName(p.name)) throw new Error(`${name}: its settings name another app`);
-  if (!isDomain(p.domain)) throw new Error(`${name}: its domain isn't a domain`);
+function validApp(value: unknown, name: string): App {
+  const given = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
+  if (given.name !== name || !isName(given.name)) throw new Error(`${name}: its settings name another app`);
+  if (!isDomain(given.domain)) throw new Error(`${name}: its domain isn't a domain`);
   // Settings from before redirects have none.
-  const redirects = p.redirects ?? [];
-  if (!areRedirects(redirects, p.domain)) throw new Error(`${name}: its redirects aren't a few domains, other than its own`);
-  if (!isRepo(p.repo)) throw new Error(`${name}: its repository isn't owner/name`);
-  if (!isPort(p.port)) throw new Error(`${name}: its port isn't one it can use`);
+  const redirects = given.redirects ?? [];
+  if (!areRedirects(redirects, given.domain)) throw new Error(`${name}: its redirects aren't a few domains, other than its own`);
+  if (!isRepo(given.repo)) throw new Error(`${name}: its repository isn't owner/name`);
+  if (!isPort(given.port)) throw new Error(`${name}: its port isn't one it can use`);
   // Settings from before memory was given out have what every app had then.
-  const memory = p.memory === undefined ? DEFAULT_MEMORY : p.memory;
+  const memory = given.memory === undefined ? DEFAULT_MEMORY : given.memory;
   if (!isMemory(memory)) throw new Error(`${name}: its memory isn't whole megabytes, from 128 to 1048576`);
-  return { name, domain: p.domain, redirects, repo: p.repo, port: p.port, memory, branch: BRANCH, workflow: WORKFLOW };
+  return { name, domain: given.domain, redirects, repo: given.repo, port: given.port, memory, branch: BRANCH, workflow: WORKFLOW };
 }
 
 /** An app's settings, or null if there's no such app. */
@@ -88,7 +88,7 @@ export async function readApp(paths: Layout, name: string): Promise<App | null> 
   } catch {
     throw new Error(`${paths.app(name)} isn't valid JSON: fix it, or remove the app`);
   }
-  return checked(value, name);
+  return validApp(value, name);
 }
 
 /** Every app but `name`: the ones it must fit beside. */
@@ -115,14 +115,14 @@ export async function listApps(paths: Layout): Promise<App[]> {
 }
 
 export async function saveApp(paths: Layout, app: App): Promise<void> {
-  checked(app, app.name);
+  validApp(app, app.name);
   const { name, domain, redirects, repo, port, memory } = app;
   await writeWhole(paths.app(name), `${JSON.stringify({ name, domain, redirects, repo, port, memory }, null, 2)}\n`);
 }
 
 /** The first port no app has, and nothing else is listening on. */
 export function freePort(apps: App[], listening: Set<number> = new Set()): number {
-  const taken = new Set([...apps.map((p) => p.port), ...listening]);
+  const taken = new Set([...apps.map((app) => app.port), ...listening]);
   let port = FIRST_PORT;
   while (taken.has(port)) port++;
   return port;

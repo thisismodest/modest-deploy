@@ -1,14 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { APP, onServer } from "../test/helpers.ts";
+import { APP, MB, onServer, SMALL } from "../test/helpers.ts";
 import { readApp } from "./apps.ts";
 import { writeWhole } from "./files.ts";
 import { allot, type Machine, parseMemory, shares } from "./memory.ts";
 
-const MB = 1024 ** 2;
 const GB = 1024 * MB;
-/** What a "1GB" server reports: the kernel keeps some. */
-const SMALL: Machine = { total: 960 * MB, cores: 1 };
 const MEDIUM: Machine = { total: 4 * GB, cores: 2 };
 const LARGE: Machine = { total: 16 * GB, cores: 8 };
 

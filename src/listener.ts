@@ -13,7 +13,7 @@ import { enqueue } from "./queue.ts";
 import { decide, signatureValid } from "./webhook.ts";
 
 /** GitHub's workflow_run messages are tens of kilobytes; nothing it sends here comes near this. */
-export const MOST_BYTES = 1024 * 1024;
+export const MOST_BODY_BYTES = 1024 * 1024;
 
 const answer = (res: ServerResponse, status: number, text: string) => {
   res.writeHead(status, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" }).end(`${text}\n`);
@@ -26,7 +26,7 @@ function readBody(req: IncomingMessage): Promise<Buffer | null> {
     let size = 0;
     req.on("data", (chunk: Buffer) => {
       size += chunk.length;
-      if (size > MOST_BYTES) {
+      if (size > MOST_BODY_BYTES) {
         req.removeAllListeners("data");
         req.pause();
         return resolve(null);
@@ -45,7 +45,7 @@ async function handle(paths: Layout, seen: Set<string>, req: IncomingMessage, re
   const name = /^\/deploy\/([^/?#]+)$/.exec(req.url ?? "")?.[1];
   if (!name || !isName(name)) return answer(res, 404, "Not found");
   if (req.method !== "POST") return answer(res, 405, "POST only");
-  if (Number(req.headers["content-length"] ?? 0) > MOST_BYTES) return answer(res, 413, "Too large");
+  if (Number(req.headers["content-length"] ?? 0) > MOST_BODY_BYTES) return answer(res, 413, "Too large");
   const body = await readBody(req);
   if (!body) {
     // The rest isn't read: the connection ends with the answer.

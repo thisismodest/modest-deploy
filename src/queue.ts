@@ -49,10 +49,3 @@ export async function takeOne(paths: Layout): Promise<Request | null> {
   }
   return null;
 }
-
-/** Takes every waiting request (for tests, and for clearing the queue). */
-export async function takeAll(paths: Layout): Promise<Request[]> {
-  const taken: Request[] = [];
-  for (let request = await takeOne(paths); request; request = await takeOne(paths)) taken.push(request);
-  return taken;
-}

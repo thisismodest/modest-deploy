@@ -13,9 +13,9 @@ const OPEN = new Set([22, 80, 443]);
 /** And over UDP: HTTP/3, and the DHCP clients a server's network may use. */
 const OPEN_UDP = new Set([443, 68, 546]);
 
-/** The address and port of each listening socket that isn't this machine's own (from `ss -Hltn` or `ss -Hlun`). */
-export function outsidePorts(ss: string, open: Set<number> = OPEN): string[] {
-  const found: string[] = [];
+/** Each listening socket in `ss -Hltn` or `ss -Hlun`'s output: its address and port as written, its port, and whether it's this machine's own. */
+export function sockets(ss: string): { local: string; port: number; loopback: boolean }[] {
+  const found: { local: string; port: number; loopback: boolean }[] = [];
   for (const line of ss.split("\n")) {
     const local = line.trim().split(/\s+/)[3];
     if (!local) continue;
@@ -24,12 +24,17 @@ export function outsidePorts(ss: string, open: Set<number> = OPEN): string[] {
       .slice(0, at)
       .replace(/^\[|\]$/g, "")
       .replace(/%\S+$/, "");
-    const port = Number(local.slice(at + 1));
     const loopback = /^127\./.test(address) || address === "::1" || address === "::ffff:127.0.0.1" || /%lo\b/.test(local);
-    if (!loopback && !open.has(port)) found.push(local);
+    found.push({ local, port: Number(local.slice(at + 1)), loopback });
   }
   return found;
 }
+
+/** The address and port of each listening socket that isn't this machine's own, nor one of the `open` ports. */
+export const outsidePorts = (ss: string, open: Set<number> = OPEN): string[] =>
+  sockets(ss)
+    .filter((socket) => !socket.loopback && !open.has(socket.port))
+    .map((socket) => socket.local);
 
 /** sshd's settings as it will use them (`sshd -T`), by lower-case name. */
 const sshdSettings = (text: string) => new Map(text.split("\n").map((line) => [line.split(" ")[0] ?? "", line.slice(line.indexOf(" ") + 1).trim()]));

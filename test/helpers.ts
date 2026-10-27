@@ -6,7 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type App, saveApp } from "../src/apps.ts";
 import { writeWhole } from "../src/files.ts";
+import type { Machine } from "../src/memory.ts";
 import { type Layout, layout } from "../src/paths.ts";
+import { type Request, takeOne } from "../src/queue.ts";
 
 export const SECRET = "a".repeat(64);
 export const COMMIT = "0123456789abcdef0123456789abcdef01234567";
@@ -55,3 +57,14 @@ export function passed(changes: Record<string, unknown> = {}, run: Record<string
     ...changes,
   };
 }
+
+/** Takes every waiting deploy request, one at a time, as the deploy service would. */
+export async function takeAll(paths: Layout): Promise<Request[]> {
+  const taken: Request[] = [];
+  for (let request = await takeOne(paths); request; request = await takeOne(paths)) taken.push(request);
+  return taken;
+}
+
+export const MB = 1024 ** 2;
+/** What a "1GB" server reports: the kernel keeps some. */
+export const SMALL: Machine = { total: 960 * MB, cores: 1 };

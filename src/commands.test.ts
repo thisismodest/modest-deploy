@@ -5,20 +5,17 @@ import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { APP, onServer } from "../test/helpers.ts";
+import { APP, MB, onServer, SMALL } from "../test/helpers.ts";
 import { readApp, takenDomain } from "./apps.ts";
 import { checkServer, outsidePorts } from "./check.ts";
 import { writeWhole } from "./files.ts";
 import { isServer, launch, listServers } from "./launch.ts";
-import type { Machine } from "./memory.ts";
 import { layout } from "./paths.ts";
 import type { Ran, Run, RunOptions } from "./run.ts";
 import { moveOldSettings } from "./server.ts";
 import { appService, appSite, deployService, hostSite, listenerService } from "./units.ts";
 
 const ok = (stdout = ""): Ran => ({ code: 0, stdout, stderr: "" });
-const MB = 1024 ** 2;
-const SMALL: Machine = { total: 960 * MB, cores: 1 };
 
 test("only SSH, HTTP, and HTTPS may listen to the outside; anything on this machine's own address may", () => {
   const ss = [

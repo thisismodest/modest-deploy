@@ -7,7 +7,7 @@ import { constants } from "node:fs";
 import { chmod, chown, mkdir, open, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
 import { type App, BRANCH, checkAppInput, freePort, listApps, otherApps, readApp, readHost, saveApp, takenDomain, WORKFLOW, WRONG } from "./apps.ts";
-import { checkServer, report } from "./check.ts";
+import { checkServer, report, sockets } from "./check.ts";
 import { answersWithin, freeBytes, KEEP_FREE, running } from "./deploy.ts";
 import { exists, writeWhole } from "./files.ts";
 import { allot, type Machine, memoryGiven, parseMemory, shares, sizeText } from "./memory.ts";
@@ -30,7 +30,7 @@ import { appService, appSite, BACKUP_TIMER, backupService, caddyImport, deployPa
 export type Server = { run: Run; paths: Layout; node: string; cli: string; log: (line: string) => void; machine: Machine };
 
 /** Checks the server, and refuses to go on if anything needs fixing (unless told to go on anyway). */
-async function checked(server: Server, anyway: boolean): Promise<void> {
+async function checkFirst(server: Server, anyway: boolean): Promise<void> {
   const ok = report(await checkServer(server.run, { cli: server.cli, fleet: { apps: await listApps(server.paths), machine: server.machine } }));
   if (!ok && !anyway) throw new Error("fix what's above first (or add --anyway, if you're sure)");
 }
@@ -113,13 +113,7 @@ async function githubHostKeys(): Promise<string> {
 
 /** The ports something is already listening on, on any address. */
 async function listening(server: Server): Promise<Set<number>> {
-  const ss = await server.run("ss", ["-Hltn"]);
-  return new Set(
-    ss.stdout
-      .split("\n")
-      .map((line) => Number(line.trim().split(/\s+/)[3]?.split(":").at(-1)))
-      .filter(Number.isInteger),
-  );
+  return new Set(sockets((await server.run("ss", ["-Hltn"])).stdout).map((socket) => socket.port));
 }
 
 /**
@@ -141,7 +135,7 @@ export async function install(server: Server, given: string | undefined, anyway 
   const before = await readHost(paths).catch(() => null);
   const domain = given || before?.domain;
   if (!isDomain(domain)) throw new Error("the deploy domain must be a domain, such as deploy.example.org: add --domain");
-  await checked(server, anyway);
+  await checkFirst(server, anyway);
   await systemUser(server, LISTENER_USER);
 
   await folder(server, paths.settings, 0o755);
@@ -224,7 +218,7 @@ export async function add(
 ): Promise<Added> {
   const { name, domain, repo, redirects = [], anyway = false } = options;
   const asked = checkAppInput({ name, domain, redirects, repo, memory: options.memory });
-  await checked(server, anyway);
+  await checkFirst(server, anyway);
   const { paths, run, node } = server;
   const host = await readHost(paths);
   const existing = await readApp(paths, name);
@@ -308,11 +302,11 @@ export async function remove(server: Server, name: string): Promise<string[]> {
 export async function list(server: Server): Promise<string[]> {
   const rows: string[] = [];
   const apps = await listApps(server.paths);
-  for (const p of apps) {
-    const state = (await server.run("systemctl", ["is-active", appUnit(p.name)])).stdout.trim() || "unknown";
-    const commit = (await running(server.paths, p.name))?.slice(0, 7) ?? "none yet";
-    const from = p.redirects.length ? ` (from ${p.redirects.join(", ")})` : "";
-    rows.push(`${p.name}  https://${p.domain}${from}  ${p.repo}  port ${p.port}  ${sizeText(p.memory)}  ${state}  ${commit}`);
+  for (const app of apps) {
+    const state = (await server.run("systemctl", ["is-active", appUnit(app.name)])).stdout.trim() || "unknown";
+    const commit = (await running(server.paths, app.name))?.slice(0, 7) ?? "none yet";
+    const from = app.redirects.length ? ` (from ${app.redirects.join(", ")})` : "";
+    rows.push(`${app.name}  https://${app.domain}${from}  ${app.repo}  port ${app.port}  ${sizeText(app.memory)}  ${state}  ${commit}`);
   }
   const { reserve, apps: room } = shares(server.machine);
   const given = memoryGiven(apps);

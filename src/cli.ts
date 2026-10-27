@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // modest-deploy's commands. On the server, as root: check, install, add, remove, deploy,
 // restart, resize, logs, and backup; and list, as anyone. On your computer: launch, and
-// list --server. And the ones systemd
-// runs: listen (the listener), work (the deploy service), and copy-database (backup).
+// list --server. And the ones systemd runs: listen (the listener), work (the deploy
+// service), and backup-now and copy-database (the nightly backup).
 
 import { realpathSync } from "node:fs";
 import { listApps, readApp } from "./apps.ts";
-import { checkServer, outsidePorts, report } from "./check.ts";
+import { checkServer, report, sockets } from "./check.ts";
 import { answersWithin, deploy } from "./deploy.ts";
 import { helpFor, OVERVIEW, wantsHelp } from "./help.ts";
 import { dnsFor, launch, listServers } from "./launch.ts";
@@ -178,8 +178,10 @@ async function main(argv: string[]): Promise<void> {
     }
     case "backup-now": {
       // Nightly, too: anything listening to the outside that shouldn't be (an app broken into, say) is said.
-      const listening = await run("ss", ["-Hltn"]);
-      const open = outsidePorts(listening.stdout).filter((local) => !/:(\d+)$/.test(local) || Number(local.split(":").at(-1)) >= 1024);
+      // Only root can listen below 1024, so an app can't: what's there is the server's own (SSH, Caddy).
+      const open = sockets((await run("ss", ["-Hltn"])).stdout)
+        .filter((socket) => !socket.loopback && !(socket.port < 1024))
+        .map((socket) => socket.local);
       if (open.length) console.warn(`modest-deploy: listening to the outside, and shouldn't be: ${open.join(", ")}. Run modest-deploy check.`);
       const { copied, failed } = await backup(server());
       log(`modest-deploy: copied ${copied} databases${failed ? `; ${failed} couldn't be copied (above)` : ""}.`);

@@ -4,10 +4,10 @@ import type { AddressInfo } from "node:net";
 import { connect } from "node:net";
 import { join } from "node:path";
 import { test } from "node:test";
-import { APP, COMMIT, onServer, passed, sign, withApp } from "../test/helpers.ts";
-import { createListener, MOST_BYTES } from "./listener.ts";
+import { APP, COMMIT, onServer, passed, sign, takeAll, withApp } from "../test/helpers.ts";
+import { createListener, MOST_BODY_BYTES } from "./listener.ts";
 import type { Layout } from "./paths.ts";
-import { enqueue, takeAll } from "./queue.ts";
+import { enqueue } from "./queue.ts";
 
 /** A listener on a free port for the test, closed after. */
 async function listening(paths: Layout, run: (url: string) => Promise<void>) {
@@ -113,7 +113,7 @@ test("a body over 1MB is refused, by its stated length or as it arrives, and nev
   onServer(async (paths) => {
     await withApp(paths);
     await listening(paths, async (url) => {
-      const big = "x".repeat(MOST_BYTES + 1);
+      const big = "x".repeat(MOST_BODY_BYTES + 1);
       assert.equal((await send(url, big)).status, 413);
       // Sent without a length, in pieces: cut off once past the limit.
       const port = Number(new URL(url).port);
