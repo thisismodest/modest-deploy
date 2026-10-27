@@ -6,6 +6,8 @@ Every change that affects how it's used, or what it promises. The format follows
 
 ## Unreleased
 
+## [0.4.0] - 2026-10-27
+
 ### Added
 
 - Memory set aside for each app: 512M (or all that's left, if less), or what
