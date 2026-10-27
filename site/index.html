@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'" />
     <meta name="referrer" content="no-referrer" />
-    <title>modest-deploy: deploy Node products to your own server</title>
-    <meta name="description" content="Run small Node products on your own server: launch each with one command, and deploy on every push that passes CI. No dependencies, and GitHub never holds a key to your server." />
+    <title>modest-deploy: deploy Node apps to your own server</title>
+    <meta name="description" content="Run small Node apps on your own server: launch each with one command, and deploy on every push that passes CI. No dependencies, and GitHub never holds a key to your server." />
     <link rel="canonical" href="https://modest-deploy.com/" />
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
@@ -15,12 +15,12 @@
     <meta property="og:site_name" content="modest-deploy" />
     <meta property="og:locale" content="en_GB" />
     <meta property="og:url" content="https://modest-deploy.com/" />
-    <meta property="og:title" content="modest-deploy: deploy Node products to your own server" />
-    <meta property="og:description" content="Run small Node products on your own server: launch each with one command, and deploy on every push that passes CI. No dependencies, and GitHub never holds a key to your server." />
+    <meta property="og:title" content="modest-deploy: deploy Node apps to your own server" />
+    <meta property="og:description" content="Run small Node apps on your own server: launch each with one command, and deploy on every push that passes CI. No dependencies, and GitHub never holds a key to your server." />
     <meta property="og:image" content="https://modest-deploy.com/assets/og.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="modest-deploy: Deploy Node products to your own server. No dependencies. Beside it, a product being launched with one command." />
+    <meta property="og:image:alt" content="modest-deploy: Deploy Node apps to your own server. No dependencies. Beside it, an app being launched with one command." />
     <meta name="twitter:card" content="summary_large_image" />
     <script type="application/ld+json">{"@context": "https://schema.org", "@type": "SoftwareSourceCode", "name": "modest-deploy", "description": "Host small Node products on one server: launch each with a command, and deploy on every push that passes CI. No dependencies.", "url": "https://modest-deploy.com/", "codeRepository": "https://github.com/thisismodest/modest-deploy", "programmingLanguage": "TypeScript", "runtimePlatform": "Node.js 24", "license": "https://opensource.org/license/mit", "author": {"@type": "Organization", "name": "Modest Industries Ltd"}}</script>
     <link rel="stylesheet" href="assets/vendor/modest-ui.min.css" />
@@ -47,9 +47,9 @@
           <div class="hero-grid">
             <div>
               <span class="pill"><span class="dot amber" aria-hidden="true"></span>Early, not yet independently reviewed</span>
-              <h1>Deploy Node products to your own server.<br /><span class="quiet">No dependencies.</span></h1>
+              <h1>Deploy Node apps to your own server.<br /><span class="quiet">No dependencies.</span></h1>
               <p class="lead">
-                Set up a server once. Then launch each product with one command, and every push that passes
+                Set up a server once. Then launch each app with one command, and every push that passes
                 CI deploys it.
               </p>
               <div class="actions">
@@ -60,11 +60,11 @@
             </div>
 
             <div>
-              <figure class="window terminal" aria-label="Launching a product">
+              <figure class="window terminal" aria-label="Launching an app">
                 <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
-                <pre><code><span class="c">$</span> modest-deploy launch shop shop.example.org --server myserver
-Made the repository example/shop.
-Added shop on myserver.
+                <pre><code><span class="c">$</span> modest-deploy launch blog blog.example.org --server myserver
+Made the repository example/blog.
+Added blog on myserver.
 Gave GitHub the read-only deploy key, and the webhook.
 
 <span class="c">$</span> git push
@@ -73,7 +73,7 @@ Gave GitHub the read-only deploy key, and the webhook.
 </code></pre>
               </figure>
               <div class="status">
-                <p><span class="dot" aria-hidden="true"></span><strong>shop: running 3f2a9c1</strong></p>
+                <p><span class="dot" aria-hidden="true"></span><strong>blog: running 3f2a9c1</strong></p>
                 <p class="detail">Signed · main · CI passed · answered</p>
               </div>
             </div>
@@ -83,7 +83,7 @@ Gave GitHub the read-only deploy key, and the webhook.
         <ul class="facts" aria-label="In numbers">
           <li><strong>0</strong><span>runtime dependencies</span></li>
           <li><strong>~2,050</strong><span>lines of source</span></li>
-          <li><strong>1</strong><span>command per product</span></li>
+          <li><strong>1</strong><span>command per app</span></li>
           <li><strong>7</strong><span>nights of database copies</span></li>
         </ul>
 
@@ -121,8 +121,8 @@ Gave GitHub the read-only deploy key, and the webhook.
           <p class="section-lead">When CI passes on main:</p>
           <ol class="steps">
             <li><strong>GitHub sends a signed message</strong><span>Signed with a secret that only the server and GitHub have.</span></li>
-            <li><strong>The server checks it</strong><span>It has to be signed, from the product's own repository, for a CI run on main that passed. Anything else is ignored.</span></li>
-            <li><strong>It fetches and builds</strong><span>Only the newest commit on main, with the product's own read-only key. Dependencies come from the lockfile, with install scripts off.</span></li>
+            <li><strong>The server checks it</strong><span>It has to be signed, from the app's own repository, for a CI run on main that passed. Anything else is ignored.</span></li>
+            <li><strong>It fetches and builds</strong><span>Only the newest commit on main, with the app's own read-only key. Dependencies come from the lockfile, with install scripts off.</span></li>
             <li><strong>It switches over</strong><span>If the new version doesn't respond, the previous one is restored.</span></li>
           </ol>
         </section>
@@ -134,17 +134,17 @@ Gave GitHub the read-only deploy key, and the webhook.
             <div>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5" /><path d="m8 10 2 2-2 2" /><path d="M12.5 14h3.5" /></svg>
               <h3>One command to launch</h3>
-              <p>Creates the GitHub repository, sets the product up on the server with its domain and HTTPS certificate, and connects the two.</p>
+              <p>Creates the GitHub repository, sets the app up on the server with its domain and HTTPS certificate, and connects the two.</p>
             </div>
             <div>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6L12 3Z" /><path d="m9 12 2.2 2.2L15.5 10" /></svg>
               <h3>Signed deploys</h3>
-              <p>Only the newest commit on main is deployed, so an old message sent again can't roll a product back.</p>
+              <p>Only the newest commit on main is deployed, so an old message sent again can't roll an app back.</p>
             </div>
             <div>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4.5" width="16" height="15" rx="2.5" /><path d="M4 10h16" /><path d="M9 4.5v5.5" /></svg>
-              <h3>A user per product</h3>
-              <p>Each product runs as its own user in a systemd sandbox. It can read its own code and write only to its own data folder.</p>
+              <h3>A user per app</h3>
+              <p>Each app runs as its own user in a systemd sandbox. It can read its own code and write only to its own data folder.</p>
             </div>
             <div>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 7 4.5 11.5 9 16" /><path d="M5 11.5h9a5 5 0 0 1 0 10h-2" /></svg>
@@ -154,7 +154,7 @@ Gave GitHub the read-only deploy key, and the webhook.
             <div>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2.5" /><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8" /></svg>
               <h3>Nightly backups</h3>
-              <p>Each product's SQLite databases are copied every night with SQLite's backup API, and kept for 7 nights.</p>
+              <p>Each app's SQLite databases are copied every night with SQLite's backup API, and kept for 7 nights.</p>
             </div>
             <div>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5" /><path d="m8.5 12 2.4 2.4 4.6-4.8" /></svg>
@@ -170,7 +170,7 @@ Gave GitHub the read-only deploy key, and the webhook.
    <span class="ok">ok:</span> nothing deployed: GitHub's real host keys are pinned
 == a signed message for a passed CI run deploys
    <span class="ok">ok:</span> shop v1 is running, with modest-auth installed from npm
-== each product is sandboxed
+== each app is sandboxed
    <span class="ok">ok:</span> it can write its own data, and nothing else
 == a version that doesn't start is switched back
    <span class="ok">ok:</span> v2 is running again

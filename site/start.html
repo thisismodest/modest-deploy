@@ -6,7 +6,7 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'" />
     <meta name="referrer" content="no-referrer" />
     <title>Step by step: modest-deploy</title>
-    <meta name="description" content="From a new Ubuntu server to a Node product live on your own domain, deployed on every push that passes CI." />
+    <meta name="description" content="From a new Ubuntu server to a Node app live on your own domain, deployed on every push that passes CI." />
     <link rel="canonical" href="https://modest-deploy.com/start.html" />
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
@@ -16,11 +16,11 @@
     <meta property="og:locale" content="en_GB" />
     <meta property="og:url" content="https://modest-deploy.com/start.html" />
     <meta property="og:title" content="Step by step: modest-deploy" />
-    <meta property="og:description" content="From a new Ubuntu server to a Node product live on your own domain, deployed on every push that passes CI." />
+    <meta property="og:description" content="From a new Ubuntu server to a Node app live on your own domain, deployed on every push that passes CI." />
     <meta property="og:image" content="https://modest-deploy.com/assets/og.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="modest-deploy: Deploy Node products to your own server. No dependencies. Beside it, a product being launched with one command." />
+    <meta property="og:image:alt" content="modest-deploy: Deploy Node apps to your own server. No dependencies. Beside it, an app being launched with one command." />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="stylesheet" href="assets/vendor/modest-ui.min.css" />
     <link rel="stylesheet" href="assets/site.css" />
@@ -45,8 +45,8 @@
     <header class="page-head">
       <div class="wrap">
         <p class="eyebrow">Step by step</p>
-        <h1>From a new server to a live product</h1>
-        <p class="lead">Set up an Ubuntu server, install modest-deploy, and launch a first product on your own domain.</p>
+        <h1>From a new server to a live app</h1>
+        <p class="lead">Set up an Ubuntu server, install modest-deploy, and launch a first app on your own domain.</p>
       </div>
     </header>
 
@@ -58,7 +58,7 @@
             <li><a href="#server">Set up the server</a></li>
             <li><a href="#install">Install modest-deploy</a></li>
             <li><a href="#computer">Set up your computer</a></li>
-            <li><a href="#product">Write a product</a></li>
+            <li><a href="#app">Write an app</a></li>
             <li><a href="#launch">Launch it</a></li>
             <li><a href="#keys">Keys and sign-in</a></li>
             <li><a href="#after">Day to day</a></li>
@@ -152,26 +152,26 @@ PermitRootLogin no</code></pre>
           <p>Everything else still asks for your password.</p>
         </section>
 
-        <section aria-labelledby="product">
-          <h2 id="product">4. Write a product</h2>
-          <p>A product is a Node app with a <code>server.js</code> that listens on the port and address it's given. In a new folder:</p>
+        <section aria-labelledby="app">
+          <h2 id="app">4. Write an app</h2>
+          <p>An app is a Node server, <code>server.js</code>, that listens on the port and address it's given. In a new folder:</p>
           <div class="window">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>server.js</span></div>
             <pre><code>import { createServer } from "node:http";
 
-// modest-deploy gives each product its port, and 127.0.0.1 to listen on (Caddy is in front).
+// modest-deploy gives each app its port, and 127.0.0.1 to listen on (Caddy is in front).
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? "127.0.0.1";
 
 createServer((req, res) =&gt; {
   res.writeHead(200, { "content-type": "text/plain; charset=utf-8" });
-  res.end("Hello from shop\n");
+  res.end("Hello from blog\n");
 }).listen(port, host, () =&gt; console.log(`Listening on http://${host}:${port}`));</code></pre>
           </div>
           <div class="window">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>package.json</span></div>
             <pre><code>{
-  "name": "shop",
+  "name": "blog",
   "private": true,
   "type": "module",
   "scripts": {
@@ -202,7 +202,7 @@ jobs:
       - run: node --check server.js</code></pre>
           </div>
           <p>
-            Keep anything the product writes in <code>process.env.DATA_DIR</code>: everything else is read-only
+            Keep anything the app writes in <code>process.env.DATA_DIR</code>: everything else is read-only
             to it. If it has dependencies, commit a <code>package-lock.json</code>.
           </p>
         </section>
@@ -211,13 +211,13 @@ jobs:
           <h2 id="launch">5. Launch it</h2>
           <div class="window terminal">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
-            <pre><code><span class="c">$</span> modest-deploy launch shop shop.example.org --server myserver</code></pre>
+            <pre><code><span class="c">$</span> modest-deploy launch blog blog.example.org --server myserver</code></pre>
           </div>
-          <p>This makes a private <code>shop</code> repository on your own GitHub account (add <code>--public</code> for a public one), sets the product up on the server, and connects the two: from then on, the server fetches the code from GitHub whenever CI passes.</p>
+          <p>This makes a private <code>blog</code> repository on your own GitHub account (add <code>--public</code> for a public one), sets the app up on the server, and connects the two: from then on, the server fetches the code from GitHub whenever CI passes.</p>
           <ul>
-            <li><strong>For an organisation,</strong> name it: <code>--repo your-org/shop</code>. It's made there (if you're allowed to make repositories there), or connected if it's there already. If <code>gh</code> is signed in to more than one GitHub account, it uses the active one (<code>gh auth status</code>).</li>
-            <li><strong>Already have the repository on GitHub?</strong> Launch connects that one instead of making a new one, and leaves its code alone. It looks for <code>your-username/shop</code>; for any other, add <code>--repo owner/name</code>. Run it from any folder: it works with GitHub, not with the files on your computer.</li>
-            <li><strong>Memory:</strong> the product gets 512M. If it's the only one on the server, add <code>--memory max</code> to give it everything the server can spare (<a href="docs.html#memory">more on memory</a>).</li>
+            <li><strong>For an organisation,</strong> name it: <code>--repo your-org/blog</code>. It's made there (if you're allowed to make repositories there), or connected if it's there already. If <code>gh</code> is signed in to more than one GitHub account, it uses the active one (<code>gh auth status</code>).</li>
+            <li><strong>Already have the repository on GitHub?</strong> Launch connects that one instead of making a new one, and leaves its code alone. It looks for <code>your-username/blog</code>; for any other, add <code>--repo owner/name</code>. Run it from any folder: it works with GitHub, not with the files on your computer.</li>
+            <li><strong>Memory:</strong> the app gets 512M (less on a server with less to spare; launch says how much). If it's the only one on the server, add <code>--memory max</code> to give it everything the server can spare (<a href="docs.html#memory">more on memory</a>).</li>
           </ul>
           <p>Then:</p>
           <ol>
@@ -227,7 +227,7 @@ jobs:
           <div class="window terminal">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
             <pre><code><span class="c">$</span> git init -b main &amp;&amp; git add -A &amp;&amp; git commit -m "First version"
-<span class="c">$</span> git remote add origin git@github.com:YOUR-USER/shop.git
+<span class="c">$</span> git remote add origin git@github.com:YOUR-USER/blog.git
 <span class="c">$</span> git push -u origin main</code></pre>
           </div>
           <p>
@@ -236,28 +236,28 @@ jobs:
           </p>
           <div class="window terminal">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
-            <pre><code><span class="c">$</span> ssh -t myserver sudo modest-deploy deploy shop</code></pre>
+            <pre><code><span class="c">$</span> ssh -t myserver sudo modest-deploy deploy blog</code></pre>
           </div>
-          <p>When CI passes (or once that deploy finishes), it's live. Open <code>https://shop.example.org</code>, or check on the server:</p>
+          <p>When CI passes (or once that deploy finishes), it's live. Open <code>https://blog.example.org</code>, or check on the server:</p>
           <div class="window terminal">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
             <pre><code><span class="c">$</span> modest-deploy list --server myserver
-<span class="c">$</span> ssh -t myserver sudo modest-deploy logs shop</code></pre>
+<span class="c">$</span> ssh -t myserver sudo modest-deploy logs blog</code></pre>
           </div>
           <p>From now on, each push to main that passes CI deploys the new version.</p>
         </section>
 
         <section aria-labelledby="keys">
           <h2 id="keys">6. Keys and sign-in</h2>
-          <p>A product's own keys, such as an email service's, go in its environment file on the server, one <code>KEY=value</code> a line:</p>
+          <p>An app's own keys, such as an email service's, go in its environment file on the server, one <code>KEY=value</code> a line:</p>
           <div class="window terminal">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
-            <pre><code><span class="c">$</span> sudo nano /etc/modest-deploy/env/shop.env
-<span class="c">$</span> sudo modest-deploy restart shop</code></pre>
+            <pre><code><span class="c">$</span> sudo nano /etc/modest-deploy/env/blog.env
+<span class="c">$</span> sudo modest-deploy restart blog</code></pre>
           </div>
           <p>
             For sign-in, <a href="https://modest-auth.com/start.html">modest-auth</a> works with it as it is: keep
-            its database in <code>DATA_DIR</code>, set <code>origin</code> to the product's address, and name Caddy as
+            its database in <code>DATA_DIR</code>, set <code>origin</code> to the app's address, and name Caddy as
             the proxy in front with <code>trustedProxies: ["loopback"]</code>.
           </p>
         </section>
@@ -268,12 +268,12 @@ jobs:
             <table>
               <thead><tr><th scope="col">To</th><th scope="col">On the server</th></tr></thead>
               <tbody>
-                <tr><td>See every product, and what it's running</td><td><code>sudo modest-deploy list</code></td></tr>
-                <tr><td>Read a product's log</td><td><code>sudo modest-deploy logs shop</code></td></tr>
-                <tr><td>Deploy main's newest commit again</td><td><code>sudo modest-deploy deploy shop</code></td></tr>
+                <tr><td>See every app, and what it's running</td><td><code>sudo modest-deploy list</code></td></tr>
+                <tr><td>Read an app's log</td><td><code>sudo modest-deploy logs blog</code></td></tr>
+                <tr><td>Deploy main's newest commit again</td><td><code>sudo modest-deploy deploy blog</code></td></tr>
                 <tr><td>Back up every database now</td><td><code>sudo modest-deploy backup</code></td></tr>
                 <tr><td>Update modest-deploy</td><td><code>sudo npm install -g modest-deploy@latest</code>, then <code>sudo modest-deploy install</code></td></tr>
-                <tr><td>Take a product off the server</td><td><code>sudo modest-deploy remove shop</code> (its data stays)</td></tr>
+                <tr><td>Take an app off the server</td><td><code>sudo modest-deploy remove blog</code> (its data stays)</td></tr>
               </tbody>
             </table>
           </div>

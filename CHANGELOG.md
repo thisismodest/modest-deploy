@@ -8,17 +8,18 @@ Every change that affects how it's used, or what it promises. The format follows
 
 ### Added
 
-- Memory set aside for each product: 512M, or what `--memory` gives on `add` and
-  `launch` (such as `1G`, or `max` for all that's left). It's the product's alone and
-  its ceiling, and a product is added only if it fits beside the others, as the server
-  keeps a quarter of its memory for itself (never under 384M). Together, products can't
+- Memory set aside for each app: 512M (or all that's left, if less), or what
+  `--memory` gives on `add` and `launch` (such as `1G`, or `max` for all that's left). It's the app's alone and
+  its ceiling, and an app is added only if it fits beside the others, as the server
+  keeps a quarter of its memory for itself (never under 384M). Together, apps can't
   run the server out of memory, and one can't take another's.
-- `modest-deploy resize <name> --memory <size>`: more memory for a product, or less, if
+- `modest-deploy resize <name> --memory <size>`: more memory for an app, or less, if
   it fits.
-- `modest-deploy list --server a,b`: every server's products, from your computer.
-- `check` finds products given more memory than the server has for them.
+- `modest-deploy list --server a,b`: every server's apps, from your computer.
+- `check` finds apps given more memory than the server has for them, and a server too
+  small to run one (under 1GB, it says plainly; modest-deploy needs about 1GB).
 - Without `gh`, or signed out of it, `launch` changes nothing: it says how to get it, or
-  how to do the same by hand, with the product's own `add` command for the server.
+  how to do the same by hand, with the app's own `add` command for the server.
 
 ### Changed
 
@@ -26,9 +27,9 @@ Every change that affects how it's used, or what it promises. The format follows
 - Each product's Node thread pool is sized to the server's cores (the cores and two, at
   most 18), so modest-auth 0.5.0 and later can hash a password on each core.
 - The deploy service builds within its share of the server's own memory (from 192M to
-  1G), not a fixed 1G: on a small server, a build no longer takes products' memory.
-- Settings from before memory was given out have 512M, as every product had. A server
-  whose products now add up to more than it has for them is found by `check` (so
+  1G), not a fixed 1G: on a small server, a build no longer takes apps' memory.
+- Settings from before memory was given out have 512M, as every app had. A server
+  whose apps now add up to more than it has for them is found by `check` (so
   `install` and `add` stop, unless `--anyway`): give some less with `resize`.
 
 ## [0.3.0] - 2026-10-27

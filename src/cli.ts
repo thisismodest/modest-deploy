@@ -5,15 +5,15 @@
 // runs: listen (the listener), work (the deploy service), and copy-database (backup).
 
 import { realpathSync } from "node:fs";
+import { listApps, readApp } from "./apps.ts";
 import { checkServer, outsidePorts, report } from "./check.ts";
 import { answersWithin, deploy } from "./deploy.ts";
 import { helpFor, OVERVIEW, wantsHelp } from "./help.ts";
 import { launch, listServers } from "./launch.ts";
 import { createListener } from "./listener.ts";
-import { thisMachine } from "./memory.ts";
+import { sizeText, thisMachine } from "./memory.ts";
 import { isName } from "./names.ts";
-import { LISTENER_PORT, layout, productUnit } from "./paths.ts";
-import { listProducts, readProduct } from "./products.ts";
+import { appUnit, LISTENER_PORT, layout } from "./paths.ts";
 import { enqueue, takeOne } from "./queue.ts";
 import { must, run } from "./run.ts";
 import { add, backup, copyDatabase, install, list, remove, resize, type Server } from "./server.ts";
@@ -47,8 +47,8 @@ function asRoot(): void {
   if (process.getuid?.() !== 0) throw new Error("run it with sudo");
 }
 
-const product = (name: string | undefined) => {
-  if (!isName(name)) throw new Error("name a product: modest-deploy list shows them");
+const app = (name: string | undefined) => {
+  if (!isName(name)) throw new Error("name an app: modest-deploy list shows them");
   return name;
 };
 
@@ -66,7 +66,7 @@ async function main(argv: string[]): Promise<void> {
   const { words, flag, text, domains } = parse(rest);
   switch (command) {
     case "check": {
-      const fleet = { products: await listProducts(layout()), machine: thisMachine() };
+      const fleet = { apps: await listApps(layout()), machine: thisMachine() };
       if (!report(await checkServer(run, undefined, realpathSync(process.argv[1] ?? ""), fleet))) process.exitCode = 1;
       return;
     }
@@ -75,9 +75,9 @@ async function main(argv: string[]): Promise<void> {
       return install(server(), text("domain"), flag("anyway"));
     case "add": {
       asRoot();
-      const added = await add(server(), product(words[0]), text("domain") ?? "", text("repo") ?? "", flag("anyway"), domains("redirect"), text("memory"));
+      const added = await add(server(), app(words[0]), text("domain") ?? "", text("repo") ?? "", flag("anyway"), domains("redirect"), text("memory"));
       if (flag("json")) return log(JSON.stringify(added));
-      log(`Added ${added.name}. In ${added.repo}'s settings on GitHub, add:`);
+      log(`Added ${added.name}, with ${sizeText(added.memory)} of memory. In ${added.repo}'s settings on GitHub, add:`);
       log(`  a deploy key (read-only): ${added.deployKey}`);
       log(`  a webhook: ${added.webhook}, content type application/json, the "Workflow runs" event, with this secret:`);
       log(`  ${added.secret}`);
@@ -95,26 +95,26 @@ async function main(argv: string[]): Promise<void> {
     }
     case "deploy": {
       asRoot();
-      const name = product(words[0]);
-      if (!(await readProduct(layout(), name))) throw new Error(`there's no product called ${name}`);
+      const name = app(words[0]);
+      if (!(await readApp(layout(), name))) throw new Error(`there's no app called ${name}`);
       await enqueue(layout(), name, "tip");
       return log(`Asked to deploy ${name}. Follow it with: journalctl -fu modest-deploy-deploy.service`);
     }
     case "restart":
       asRoot();
-      await must(run, "systemctl", ["restart", productUnit(product(words[0]))]);
+      await must(run, "systemctl", ["restart", appUnit(app(words[0]))]);
       return;
     case "resize":
       asRoot();
-      return log(await resize(server(), product(words[0]), text("memory")));
+      return log(await resize(server(), app(words[0]), text("memory")));
     case "logs": {
       asRoot();
-      const ran = await run("journalctl", ["-u", productUnit(product(words[0])), "-n", "100", "--no-pager"]);
+      const ran = await run("journalctl", ["-u", appUnit(app(words[0])), "-n", "100", "--no-pager"]);
       return log(ran.stdout.trimEnd());
     }
     case "remove": {
       asRoot();
-      const kept = await remove(server(), product(words[0]));
+      const kept = await remove(server(), app(words[0]));
       log("Removed. Kept, until you delete them yourself:");
       for (const path of kept) log(`  ${path}`);
       log("On GitHub, delete the repository's webhook and deploy key for this server (Settings, then Webhooks and Deploy keys).");
@@ -154,9 +154,9 @@ async function main(argv: string[]): Promise<void> {
       // One request at a time: the rest wait in the queue, so none is lost if this stops.
       const paths = layout();
       for (let request = await takeOne(paths); request; request = await takeOne(paths)) {
-        const found = await readProduct(paths, request.name).catch(() => null);
+        const found = await readApp(paths, request.name).catch(() => null);
         if (!found) {
-          console.error(`modest-deploy: ${request.name}: no such product`);
+          console.error(`modest-deploy: ${request.name}: no such app`);
           continue;
         }
         try {
@@ -170,7 +170,7 @@ async function main(argv: string[]): Promise<void> {
       return;
     }
     case "backup-now": {
-      // Nightly, too: anything listening to the outside that shouldn't be (a product broken into, say) is said.
+      // Nightly, too: anything listening to the outside that shouldn't be (an app broken into, say) is said.
       const listening = await run("ss", ["-Hltn"]);
       const open = outsidePorts(listening.stdout).filter((local) => !/:(\d+)$/.test(local) || Number(local.split(":").at(-1)) >= 1024);
       if (open.length) console.warn(`modest-deploy: listening to the outside, and shouldn't be: ${open.join(", ")}. Run modest-deploy check.`);

@@ -26,7 +26,7 @@ docker exec "$name" mkdir -p /e2e /opt/modest-deploy
 (cd "$root" && COPYFILE_DISABLE=1 tar -cf - package.json LICENSE src) | docker exec -i "$name" tar -xf - -C /opt/modest-deploy
 docker exec "$name" sh -c 'chmod 755 /opt/modest-deploy/src/cli.ts && ln -s /opt/modest-deploy/src/cli.ts /usr/local/bin/modest-deploy'
 docker cp "$here/inside.ts" "$name":/e2e/inside.ts
-docker cp "$here/product.js" "$name":/e2e/product.js
+docker cp "$here/app.js" "$name":/e2e/app.js
 docker cp "$here/checks.ts" "$name":/e2e/checks.ts
 docker cp "$here/probe.js" "$name":/e2e/probe.js
 docker exec "$name" node /e2e/inside.ts

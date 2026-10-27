@@ -68,8 +68,8 @@ for (const file of committed.filter((f) => f !== self)) {
   for (const [address = ""] of text.matchAll(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g)) {
     if (!fineAddress(address)) problems.push(`${file}: the address ${address}: use one kept for examples (192.0.2.x, 198.51.100.x, 203.0.113.x)`);
   }
-  // The end-to-end test's stand-in product imports modest-auth, as a real product would: it's not modest-deploy's code.
-  if (!CODE.has(extname(file)) || file === "test/e2e/product.js") continue;
+  // The end-to-end test's stand-in app imports modest-auth, as a real app would: it's not modest-deploy's code.
+  if (!CODE.has(extname(file)) || file === "test/e2e/app.js") continue;
   if (file.startsWith("src/") && !/\.test\.[a-z]+$/.test(file)) lines += text.split("\n").length;
   for (const [found] of text.matchAll(/[\p{Cf}\p{Default_Ignorable_Code_Point}⠀]/gu)) {
     problems.push(`${file}: an invisible character (U+${(found.codePointAt(0) ?? 0).toString(16).toUpperCase()}): write it as an escape`);

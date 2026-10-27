@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { COMMIT, PRODUCT, passed, SECRET, sign } from "../test/helpers.ts";
+import { APP, COMMIT, passed, SECRET, sign } from "../test/helpers.ts";
 import { isCommit, isDomain, isName, isPort, isRepo } from "./names.ts";
 import { decide, signatureValid } from "./webhook.ts";
 
 const body = JSON.stringify(passed());
 
-test("a message signed with the product's secret is accepted", () => {
+test("a message signed with the app's secret is accepted", () => {
   assert.equal(signatureValid(Buffer.from(body), sign(body), SECRET), true);
 });
 
@@ -35,13 +35,13 @@ test("with no secret, nothing is accepted, not even a message signed with an emp
   assert.equal(signatureValid(Buffer.from(body), sign(body, ""), ""), false);
 });
 
-test("a successful CI run for a push to main in the product's repository deploys its commit", () => {
-  assert.deepEqual(decide("workflow_run", passed(), PRODUCT), { deploy: COMMIT });
+test("a successful CI run for a push to main in the app's repository deploys its commit", () => {
+  assert.deepEqual(decide("workflow_run", passed(), APP), { deploy: COMMIT });
 });
 
 test("the repository is matched without case, as GitHub's are", () => {
   const upper = passed({ repository: { full_name: "Example/Shop" } }, { head_repository: { full_name: "EXAMPLE/shop" } });
-  assert.deepEqual(decide("workflow_run", upper, PRODUCT), { deploy: COMMIT });
+  assert.deepEqual(decide("workflow_run", upper, APP), { deploy: COMMIT });
 });
 
 test("anything else is ignored: other events, unfinished or failed runs, other branches, workflows, repositories, forks, and pull requests", () => {
@@ -60,18 +60,18 @@ test("anything else is ignored: other events, unfinished or failed runs, other b
     ["workflow_run", passed({}, { event: "pull_request" })],
     ["workflow_run", passed({}, { event: "workflow_dispatch" })],
   ];
-  for (const [event, payload] of cases) assert.ok("ignore" in decide(event, payload, PRODUCT), JSON.stringify([event, payload]).slice(0, 200));
+  for (const [event, payload] of cases) assert.ok("ignore" in decide(event, payload, APP), JSON.stringify([event, payload]).slice(0, 200));
 });
 
 test("a commit that isn't 40 hex characters is never passed on, however the message is shaped", () => {
   for (const head_sha of [`${COMMIT}; rm -rf /`, "HEAD", "main", COMMIT.toUpperCase(), COMMIT.slice(1), `${COMMIT}0`, `-${COMMIT.slice(1)}`, 12, null, ["x"]]) {
-    assert.ok("ignore" in decide("workflow_run", passed({}, { head_sha }), PRODUCT), String(head_sha));
+    assert.ok("ignore" in decide("workflow_run", passed({}, { head_sha }), APP), String(head_sha));
   }
 });
 
 test("messages of any shape are ignored without throwing", () => {
   for (const payload of [null, undefined, 1, "x", [], [passed()], { workflow_run: "x" }, { workflow_run: [] }, { repository: null }]) {
-    assert.ok("ignore" in decide("workflow_run", payload, PRODUCT));
+    assert.ok("ignore" in decide("workflow_run", payload, APP));
   }
 });
 

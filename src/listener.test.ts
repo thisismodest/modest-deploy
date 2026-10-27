@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { connect } from "node:net";
 import { join } from "node:path";
 import { test } from "node:test";
-import { COMMIT, onServer, PRODUCT, passed, sign, withProduct } from "../test/helpers.ts";
+import { APP, COMMIT, onServer, passed, sign, withApp } from "../test/helpers.ts";
 import { createListener, MOST_BYTES } from "./listener.ts";
 import type { Layout } from "./paths.ts";
 import { enqueue, takeAll } from "./queue.ts";
@@ -25,9 +25,9 @@ const send = (url: string, body: string, headers: Record<string, string> = {}) =
 
 const waiting = async (paths: Layout) => readdir(paths.requests).catch(() => [] as string[]);
 
-test("a signed message for a passed CI run leaves one deploy request, for that product and commit", () =>
+test("a signed message for a passed CI run leaves one deploy request, for that app and commit", () =>
   onServer(async (paths) => {
-    await withProduct(paths);
+    await withApp(paths);
     await listening(paths, async (url) => {
       const res = await send(url, JSON.stringify(passed()));
       assert.equal(res.status, 202);
@@ -39,7 +39,7 @@ test("a signed message for a passed CI run leaves one deploy request, for that p
 
 test("an unsigned, wrongly signed, or changed message leaves nothing, and is told so", () =>
   onServer(async (paths) => {
-    await withProduct(paths);
+    await withApp(paths);
     await listening(paths, async (url) => {
       const body = JSON.stringify(passed());
       for (const headers of [
@@ -55,7 +55,7 @@ test("an unsigned, wrongly signed, or changed message leaves nothing, and is tol
 
 test("a signed message that shouldn't deploy (a failed run, another branch) leaves nothing", () =>
   onServer(async (paths) => {
-    await withProduct(paths);
+    await withApp(paths);
     await listening(paths, async (url) => {
       for (const payload of [passed({}, { conclusion: "failure" }), passed({}, { head_branch: "x" }), passed({ action: "requested" })]) {
         const res = await send(url, JSON.stringify(payload));
@@ -67,18 +67,18 @@ test("a signed message that shouldn't deploy (a failed run, another branch) leav
     assert.deepEqual(await waiting(paths), []);
   }));
 
-test("a product that doesn't exist, or has no secret, or broken settings, gets the same answer as a wrong signature, so the answers don't say which exist", () =>
+test("an app that doesn't exist, or has no secret, or broken settings, gets the same answer as a wrong signature, so the answers don't say which exist", () =>
   onServer(async (paths) => {
-    await withProduct(paths);
+    await withApp(paths);
     await writeFile(paths.secret("shop"), "  \n");
-    await writeFile(paths.product("broken"), "{ not json");
+    await writeFile(paths.app("broken"), "{ not json");
     await listening(paths, async (url) => {
       const body = JSON.stringify(passed());
       assert.equal((await send(url, body)).status, 401, "an empty secret is no secret");
       for (const name of ["other", "broken"]) {
         const res = await fetch(`${url}/deploy/${name}`, { method: "POST", body, headers: { "x-hub-signature-256": sign(body) } });
         assert.equal(res.status, 401, name);
-        assert.match(await res.text(), /Not signed with this product's secret/);
+        assert.match(await res.text(), /Not signed with this app's secret/);
       }
       for (const path of ["/deploy/..%2Fshop", "/deploy/shop/x", "/deploy/", "/", "/deploy/shop?x=1"]) {
         assert.equal((await fetch(url + path, { method: "POST", body: "{}" })).status, 404, path);
@@ -89,7 +89,7 @@ test("a product that doesn't exist, or has no secret, or broken settings, gets t
 
 test("a delivery is acted on once: the same one sent again is ignored", () =>
   onServer(async (paths) => {
-    await withProduct(paths);
+    await withApp(paths);
     await listening(paths, async (url) => {
       const body = JSON.stringify(passed());
       const first = await send(url, body, { "x-github-delivery": "72d3162e-cc78-11e3-81ab-4c9367dc0958" });
@@ -103,7 +103,7 @@ test("a delivery is acted on once: the same one sent again is ignored", () =>
 
 test("only POST", () =>
   onServer(async (paths) => {
-    await withProduct(paths);
+    await withApp(paths);
     await listening(paths, async (url) => {
       assert.equal((await fetch(`${url}/deploy/shop`)).status, 405);
     });
@@ -111,7 +111,7 @@ test("only POST", () =>
 
 test("a body over 1MB is refused, by its stated length or as it arrives, and never read whole", () =>
   onServer(async (paths) => {
-    await withProduct(paths);
+    await withApp(paths);
     await listening(paths, async (url) => {
       const big = "x".repeat(MOST_BYTES + 1);
       assert.equal((await send(url, big)).status, 413);
@@ -133,15 +133,15 @@ test("a body over 1MB is refused, by its stated length or as it arrives, and nev
 
 test("a signed message that isn't JSON is refused", () =>
   onServer(async (paths) => {
-    await withProduct(paths);
+    await withApp(paths);
     await listening(paths, async (url) => {
       assert.equal((await send(url, "{not json")).status, 400);
     });
   }));
 
-test("a newer request for a product replaces one still waiting; anything in the queue that isn't a request is thrown away", () =>
+test("a newer request for an app replaces one still waiting; anything in the queue that isn't a request is thrown away", () =>
   onServer(async (paths) => {
-    await withProduct(paths);
+    await withApp(paths);
     await enqueue(paths, "shop", "tip");
     await enqueue(paths, "shop", COMMIT);
     await writeFile(join(paths.requests, "../requests/evil name"), COMMIT);
@@ -151,12 +151,12 @@ test("a newer request for a product replaces one still waiting; anything in the 
     assert.deepEqual(await waiting(paths), [], "all taken");
     await assert.rejects(enqueue(paths, "../x", COMMIT));
     await assert.rejects(enqueue(paths, "shop", "HEAD"));
-    assert.equal(PRODUCT.name, "shop");
+    assert.equal(APP.name, "shop");
   }));
 
 test("a pipe or a link left in the deploy queue is thrown away, never read: it can't stall deploys or point root elsewhere", () =>
   onServer(async (paths) => {
-    await withProduct(paths);
+    await withApp(paths);
     await enqueue(paths, "shop", COMMIT);
     const { execFileSync } = await import("node:child_process");
     const { symlink } = await import("node:fs/promises");

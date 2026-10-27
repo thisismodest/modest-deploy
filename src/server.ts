@@ -1,25 +1,25 @@
 // The commands run on the server, as root: install modest-deploy's own parts, add and
-// remove products, and copy their databases. Everything is checked first, and
-// written whole; nothing a product keeps is deleted as a side effect.
+// remove apps, and copy their databases. Everything is checked first, and
+// written whole; nothing an app keeps is deleted as a side effect.
 
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { chmod, chown, mkdir, open, readdir, readFile, rename, rm, stat, statfs } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { dirname, join, relative } from "node:path";
+import { type App, areRedirects, freePort, listApps, MOST_REDIRECTS, readApp, readHost, saveApp, takenDomain, writeWhole } from "./apps.ts";
 import { checkServer, report } from "./check.ts";
 import { answersWithin, running } from "./deploy.ts";
-import { allot, DEFAULT_MEMORY, type Machine, parseMemory, shares, sizeText } from "./memory.ts";
+import { allot, type Machine, parseMemory, shares, sizeText } from "./memory.ts";
 import { isDomain, isName, isRepo } from "./names.ts";
-import { buildUser, type Layout, LISTENER_USER, productUnit, productUser } from "./paths.ts";
-import { areRedirects, freePort, listProducts, MOST_REDIRECTS, type Product, readHost, readProduct, saveProduct, takenDomain, writeWhole } from "./products.ts";
+import { appUnit, appUser, buildUser, type Layout, LISTENER_USER } from "./paths.ts";
 import { must, type Run } from "./run.ts";
-import { BACKUP_TIMER, backupService, caddyImport, deployPath, deployService, hostSite, listenerService, productService, productSite } from "./units.ts";
+import { appService, appSite, BACKUP_TIMER, backupService, caddyImport, deployPath, deployService, hostSite, listenerService } from "./units.ts";
 
 export type Server = { run: Run; paths: Layout; node: string; cli: string; log: (line: string) => void; machine: Machine };
 
 /** Checks the server, and refuses to go on if anything needs fixing (unless told to go on anyway). */
 async function checked(server: Server, anyway: boolean): Promise<void> {
-  const ok = report(await checkServer(server.run, undefined, server.cli, { products: await listProducts(server.paths), machine: server.machine }));
+  const ok = report(await checkServer(server.run, undefined, server.cli, { apps: await listApps(server.paths), machine: server.machine }));
   if (!ok && !anyway) throw new Error("fix what's above first (or add --anyway, if you're sure)");
 }
 
@@ -100,8 +100,22 @@ async function listening(server: Server): Promise<Set<number>> {
 }
 
 /**
+ * Moves apps' settings from where installs before 0.4.0 kept them (products/, from when
+ * apps were called products) to apps/: once, and never over an apps/ folder already there.
+ */
+export async function moveOldSettings(paths: Layout): Promise<void> {
+  const old = join(dirname(paths.apps), "products");
+  const there = (path: string) =>
+    stat(path).then(
+      () => true,
+      () => false,
+    );
+  if ((await there(old)) && !(await there(paths.apps))) await rename(old, paths.apps);
+}
+
+/**
  * Installs modest-deploy's own parts, or, run again (after updating modest-deploy), brings
- * every unit it wrote up to date, products' included. The deploy domain can be left
+ * every unit it wrote up to date, apps' included. The deploy domain can be left
  * out then: the one already set is kept.
  */
 export async function install(server: Server, given: string | undefined, anyway = false): Promise<void> {
@@ -113,7 +127,8 @@ export async function install(server: Server, given: string | undefined, anyway 
   await systemUser(server, LISTENER_USER);
 
   await folder(server, "/etc/modest-deploy", 0o755);
-  await folder(server, paths.products, 0o755);
+  await moveOldSettings(paths);
+  await folder(server, paths.apps, 0o755);
   await folder(server, paths.secrets, 0o750, LISTENER_USER);
   await chown(paths.secrets, 0, Number((await must(run, "id", ["-g", LISTENER_USER])).trim()));
   // Passed through, never listed: each key inside is its own build user's alone.
@@ -134,7 +149,7 @@ export async function install(server: Server, given: string | undefined, anyway 
   // Caddy first: if it can't use the change, its own Caddyfile is put back as it was, and nothing else has changed.
   const caddyfile = await readFile(paths.caddyfile, "utf8").catch(() => "");
   if (!caddyfile.split("\n").some((line) => line.trim() === caddyImport(paths))) {
-    await writeWhole(paths.caddyfile, `${caddyfile.replace(/\n*$/, "\n")}\n# Added by modest-deploy: its products' sites.\n${caddyImport(paths)}\n`);
+    await writeWhole(paths.caddyfile, `${caddyfile.replace(/\n*$/, "\n")}\n# Added by modest-deploy: its apps' sites.\n${caddyImport(paths)}\n`);
   }
   try {
     await caddyWith(server, paths.caddySite("_host"), hostSite(domain));
@@ -150,39 +165,39 @@ export async function install(server: Server, given: string | undefined, anyway 
   await writeWhole(paths.unit("modest-deploy-deploy.path"), deployPath(paths));
   await writeWhole(paths.unit("modest-deploy-backup.service"), backupService(node, cli));
   await writeWhole(paths.unit("modest-deploy-backup.timer"), BACKUP_TIMER);
-  // Products' units are rewritten only if they've changed, and only those products restarted.
-  const products = await listProducts(paths);
-  const changed: Product[] = [];
-  for (const product of products) {
-    const text = productService(paths, product, node, server.machine);
-    if ((await readFile(paths.unit(productUnit(product.name)), "utf8").catch(() => "")) === text) continue;
-    await writeWhole(paths.unit(productUnit(product.name)), text);
-    changed.push(product);
+  // Apps' units are rewritten only if they've changed, and only those apps restarted.
+  const apps = await listApps(paths);
+  const changed: App[] = [];
+  for (const app of apps) {
+    const text = appService(paths, app, node, server.machine);
+    if ((await readFile(paths.unit(appUnit(app.name)), "utf8").catch(() => "")) === text) continue;
+    await writeWhole(paths.unit(appUnit(app.name)), text);
+    changed.push(app);
   }
   await must(run, "systemctl", ["daemon-reload"]);
   await must(run, "systemctl", ["enable", "--now", "modest-deploy-listener.service", "modest-deploy-deploy.path", "modest-deploy-backup.timer"]);
   await must(run, "systemctl", ["restart", "modest-deploy-listener.service"]);
-  for (const product of changed) {
-    if ((await run("systemctl", ["is-active", "--quiet", productUnit(product.name)])).code !== 0) continue;
-    await run("systemctl", ["restart", productUnit(product.name)]);
-    const answering = await answersWithin(product.port);
+  for (const app of changed) {
+    if ((await run("systemctl", ["is-active", "--quiet", appUnit(app.name)])).code !== 0) continue;
+    await run("systemctl", ["restart", appUnit(app.name)]);
+    const answering = await answersWithin(app.port);
     server.log(
       answering
-        ? `${product.name}: restarted with its updated unit, and answering.`
-        : `${product.name}: restarted with its updated unit, but NOT answering: see modest-deploy logs ${product.name}`,
+        ? `${app.name}: restarted with its updated unit, and answering.`
+        : `${app.name}: restarted with its updated unit, but NOT answering: see modest-deploy logs ${app.name}`,
     );
   }
   server.log(`Installed. Point ${domain}'s DNS at this server: GitHub's messages arrive there.`);
-  if (before && before.domain !== domain && products.length) {
-    server.log(`The deploy domain was ${before.domain}: run modest-deploy launch again for each product, so GitHub's webhooks point to ${domain}.`);
+  if (before && before.domain !== domain && apps.length) {
+    server.log(`The deploy domain was ${before.domain}: run modest-deploy launch again for each app, so GitHub's webhooks point to ${domain}.`);
   }
 }
 
-export type Added = { name: string; domain: string; redirects: string[]; repo: string; webhook: string; secret: string; deployKey: string };
+export type Added = { name: string; domain: string; redirects: string[]; repo: string; memory: number; webhook: string; secret: string; deployKey: string };
 
 /**
- * Adds a product. Caddy is asked first, and the settings saved last, so a failure
- * part way leaves nothing that stops it being run again. Run again for a product
+ * Adds an app. Caddy is asked first, and the settings saved last, so a failure
+ * part way leaves nothing that stops it being run again. Run again for an app
  * already added (the same domain and repository), it gives the same secret and key, and
  * its redirects become the ones given.
  */
@@ -196,25 +211,25 @@ export async function add(
   memory?: string,
 ): Promise<Added> {
   if (!isName(name)) throw new Error("the name must be 2 to 29 lowercase letters, digits, and single hyphens, starting with a letter");
-  if (!isDomain(domain)) throw new Error("the domain must be a domain, such as shop.example.org");
+  if (!isDomain(domain)) throw new Error("the domain must be a domain, such as blog.example.org");
   if (!areRedirects(redirects, domain))
-    throw new Error(`the redirects must be up to ${MOST_REDIRECTS} domains, each once, other than the product's own, such as www.shop.example.org`);
+    throw new Error(`the redirects must be up to ${MOST_REDIRECTS} domains, each once, other than the app's own, such as www.blog.example.org`);
   if (!isRepo(repo)) throw new Error("the repository must be owner/name, as on GitHub");
   const asked = memory === undefined ? undefined : parseMemory(memory);
   if (asked === null) throw new Error("the memory must be a size, such as 512M or 1G (at least 128M), or max");
   await checked(server, anyway);
   const { paths, run, node } = server;
   const host = await readHost(paths);
-  const existing = await readProduct(paths, name);
+  const existing = await readApp(paths, name);
   if (existing && (existing.domain !== domain || existing.repo.toLowerCase() !== repo.toLowerCase())) {
-    throw new Error(`there's already a product called ${name}, for ${existing.domain} and ${existing.repo}`);
+    throw new Error(`there's already an app called ${name}, for ${existing.domain} and ${existing.repo}`);
   }
-  const others = (await listProducts(paths)).filter((p) => p.name !== name);
+  const others = (await listApps(paths)).filter((p) => p.name !== name);
   const taken = takenDomain({ name, domain, redirects }, others, host);
   if (taken) throw new Error(`${taken} is already in use here`);
-  // Memory is given out only if it fits beside the others'; a product added again keeps its own unless told.
-  const given = asked === undefined && existing ? existing.memory : allot(asked ?? DEFAULT_MEMORY, others, server.machine);
-  const product: Product = existing
+  // Memory is given out only if it fits beside the others'; an app added again keeps its own unless told.
+  const given = asked === undefined && existing ? existing.memory : allot(asked ?? "default", others, server.machine);
+  const app: App = existing
     ? { ...existing, redirects, memory: given }
     : {
         name,
@@ -227,8 +242,8 @@ export async function add(
         workflow: ".github/workflows/ci.yml",
       };
 
-  await caddyWith(server, paths.caddySite(name), productSite(product));
-  await systemUser(server, productUser(name));
+  await caddyWith(server, paths.caddySite(name), appSite(app));
+  await systemUser(server, appUser(name));
   const builder = buildUser(name);
   await systemUser(server, builder, paths.buildHome(name));
   await folder(server, paths.buildHome(name), 0o700, builder);
@@ -244,7 +259,7 @@ export async function add(
     await rm(paths.key(name), { force: true });
     await rm(`${paths.key(name)}.pub`, { force: true });
     await must(run, "ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-C", `modest-deploy ${name}`, "-f", paths.key(name)]);
-    // Made by root in a folder only root can write, then given to this product's build user alone.
+    // Made by root in a folder only root can write, then given to this app's build user alone.
     await chown(paths.key(name), await uid(server, builder), 0);
     await chmod(paths.key(name), 0o600);
     deployKey = (await readFile(`${paths.key(name)}.pub`, "utf8")).trim();
@@ -258,21 +273,21 @@ export async function add(
   await folder(server, paths.source(name), 0o700, builder);
   await must(run, "git", ["init", "--quiet", "--bare", paths.source(name)], { as: builder });
 
-  await writeWhole(paths.unit(productUnit(name)), productService(paths, product, node, server.machine));
+  await writeWhole(paths.unit(appUnit(name)), appService(paths, app, node, server.machine));
   await must(run, "systemctl", ["daemon-reload"]);
-  await must(run, "systemctl", ["enable", productUnit(name)]);
-  // Added again with a new size, a running product starts again with it.
-  if (existing && existing.memory !== given) await run("systemctl", ["try-restart", productUnit(name)]);
-  await saveProduct(paths, product);
-  return { name, domain, redirects, repo: product.repo, webhook: `https://${host.domain}/deploy/${name}`, secret, deployKey };
+  await must(run, "systemctl", ["enable", appUnit(name)]);
+  // Added again with a new size, a running app starts again with it.
+  if (existing && existing.memory !== given) await run("systemctl", ["try-restart", appUnit(name)]);
+  await saveApp(paths, app);
+  return { name, domain, redirects, repo: app.repo, memory: app.memory, webhook: `https://${host.domain}/deploy/${name}`, secret, deployKey };
 }
 
-/** Takes a product off the server, even one whose settings are broken. Its data, keys file, and copies stay, until deleted by hand. */
+/** Takes an app off the server, even one whose settings are broken. Its data, keys file, and copies stay, until deleted by hand. */
 export async function remove(server: Server, name: string): Promise<string[]> {
   const { paths, run } = server;
-  if (!isName(name)) throw new Error(`there's no product called ${name}`);
+  if (!isName(name)) throw new Error(`there's no app called ${name}`);
   // Anything left of it counts, even from an add that stopped part way.
-  const parts = [paths.product(name), paths.unit(productUnit(name)), paths.caddySite(name), paths.secret(name), paths.code(name)];
+  const parts = [paths.app(name), paths.unit(appUnit(name)), paths.caddySite(name), paths.secret(name), paths.code(name)];
   const there = (
     await Promise.all(
       parts.map((path) =>
@@ -283,55 +298,55 @@ export async function remove(server: Server, name: string): Promise<string[]> {
       ),
     )
   ).some(Boolean);
-  if (!there) throw new Error(`there's no product called ${name}`);
-  await run("systemctl", ["disable", "--now", productUnit(name)]);
-  await rm(paths.unit(productUnit(name)), { force: true });
+  if (!there) throw new Error(`there's no app called ${name}`);
+  await run("systemctl", ["disable", "--now", appUnit(name)]);
+  await rm(paths.unit(appUnit(name)), { force: true });
   await must(run, "systemctl", ["daemon-reload"]);
   await caddyWith(server, paths.caddySite(name), null);
-  for (const path of [paths.product(name), paths.secret(name), paths.key(name), `${paths.key(name)}.pub`]) await rm(path, { force: true });
+  for (const path of [paths.app(name), paths.secret(name), paths.key(name), `${paths.key(name)}.pub`]) await rm(path, { force: true });
   await rm(paths.code(name), { recursive: true, force: true });
   return [paths.data(name), paths.backups(name), paths.env(name)];
 }
 
 export async function list(server: Server): Promise<string[]> {
   const rows: string[] = [];
-  const products = await listProducts(server.paths);
-  for (const p of products) {
-    const state = (await server.run("systemctl", ["is-active", productUnit(p.name)])).stdout.trim() || "unknown";
+  const apps = await listApps(server.paths);
+  for (const p of apps) {
+    const state = (await server.run("systemctl", ["is-active", appUnit(p.name)])).stdout.trim() || "unknown";
     const commit = (await running(server.paths, p.name))?.slice(0, 7) ?? "none yet";
     const from = p.redirects.length ? ` (from ${p.redirects.join(", ")})` : "";
     rows.push(`${p.name}  https://${p.domain}${from}  ${p.repo}  port ${p.port}  ${sizeText(p.memory)}  ${state}  ${commit}`);
   }
-  const { reserve, products: room } = shares(server.machine);
-  const given = products.reduce((sum, p) => sum + p.memory, 0);
-  rows.push(`Memory: ${sizeText(given)} of ${sizeText(room)} given to products (the server keeps ${sizeText(reserve)} for itself).`);
+  const { reserve, apps: room } = shares(server.machine);
+  const given = apps.reduce((sum, p) => sum + p.memory, 0);
+  rows.push(`Memory: ${sizeText(given)} of ${sizeText(room)} given to apps (the server keeps ${sizeText(reserve)} for itself).`);
   return rows;
 }
 
 /**
- * Gives a product more memory, or less: only if it fits beside the others'. A running
- * product starts again with it, and is checked it answers.
+ * Gives an app more memory, or less: only if it fits beside the others'. A running
+ * app starts again with it, and is checked it answers.
  */
 export async function resize(server: Server, name: string, memory: string | undefined): Promise<string> {
   const { paths, run, node } = server;
-  const product = await readProduct(paths, name);
-  if (!product) throw new Error(`there's no product called ${name}`);
+  const app = await readApp(paths, name);
+  if (!app) throw new Error(`there's no app called ${name}`);
   const asked = parseMemory(memory);
   if (asked === null) throw new Error("say how much: --memory 512M, --memory 1G (at least 128M), or --memory max");
-  const others = (await listProducts(paths)).filter((p) => p.name !== name);
+  const others = (await listApps(paths)).filter((p) => p.name !== name);
   const given = allot(asked, others, server.machine);
-  const resized = { ...product, memory: given };
-  await writeWhole(paths.unit(productUnit(name)), productService(paths, resized, node, server.machine));
-  await saveProduct(paths, resized);
+  const resized = { ...app, memory: given };
+  await writeWhole(paths.unit(appUnit(name)), appService(paths, resized, node, server.machine));
+  await saveApp(paths, resized);
   await must(run, "systemctl", ["daemon-reload"]);
-  if ((await run("systemctl", ["is-active", "--quiet", productUnit(name)])).code !== 0) return `${name} now has ${sizeText(given)}, from its next start.`;
-  await run("systemctl", ["restart", productUnit(name)]);
-  return (await answersWithin(product.port))
+  if ((await run("systemctl", ["is-active", "--quiet", appUnit(name)])).code !== 0) return `${name} now has ${sizeText(given)}, from its next start.`;
+  await run("systemctl", ["restart", appUnit(name)]);
+  return (await answersWithin(app.port))
     ? `${name} now has ${sizeText(given)}: restarted, and answering.`
     : `${name} now has ${sizeText(given)}, but isn't answering since it restarted: see modest-deploy logs ${name}`;
 }
 
-/** Databases are files ending .db, .sqlite, or .sqlite3, anywhere in a product's data. */
+/** Databases are files ending .db, .sqlite, or .sqlite3, anywhere in an app's data. */
 async function databases(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { recursive: true, withFileTypes: true }).catch(() => []);
   return entries.filter((e) => e.isFile() && /\.(db|sqlite3?)$/.test(e.name)).map((e) => join(e.parentPath, e.name));
@@ -341,41 +356,41 @@ async function databases(dir: string): Promise<string[]> {
 const NIGHTS = 7;
 
 /**
- * Copies every product's databases, with SQLite's own backup, safe while they're in
- * use. Each copy is made as the product's own user (so its files stay its own), into
+ * Copies every app's databases, with SQLite's own backup, safe while they're in
+ * use. Each copy is made as the app's own user (so its files stay its own), into
  * a folder only it can write, then moved where only root can read.
  */
 export async function backup(server: Server, today = new Date().toISOString().slice(0, 10)): Promise<{ copied: number; failed: number }> {
   const { paths, run, node, cli } = server;
   let copied = 0;
   let failed = 0;
-  const failure = (product: string, db: string, why: string) => {
+  const failure = (app: string, db: string, why: string) => {
     failed++;
-    console.error(`modest-deploy: ${product}: ${db} wasn't copied: ${why}`);
+    console.error(`modest-deploy: ${app}: ${db} wasn't copied: ${why}`);
   };
-  for (const product of await listProducts(paths)) {
-    // One product's trouble (its user missing, a file gone part way) never stops the others' copies.
+  for (const app of await listApps(paths)) {
+    // One app's trouble (its user missing, a file gone part way) never stops the others' copies.
     try {
-      const user = productUser(product.name);
-      // Each product's user can reach only its own folder here (the parent can be passed through, not listed).
+      const user = appUser(app.name);
+      // Each app's user can reach only its own folder here (the parent can be passed through, not listed).
       await folder(server, paths.copying, 0o711);
-      const work = paths.copyingFor(product.name);
+      const work = paths.copyingFor(app.name);
       await rm(work, { recursive: true, force: true });
       await folder(server, work, 0o700, user);
-      const night = join(paths.backups(product.name), today);
-      for (const db of await databases(paths.data(product.name))) {
-        const named = relative(paths.data(product.name), db);
+      const night = join(paths.backups(app.name), today);
+      for (const db of await databases(paths.data(app.name))) {
+        const named = relative(paths.data(app.name), db);
         const size = (await stat(db)).size;
-        await mkdir(paths.backups(product.name), { recursive: true, mode: 0o700 });
-        const free = await statfs(paths.backups(product.name));
+        await mkdir(paths.backups(app.name), { recursive: true, mode: 0o700 });
+        const free = await statfs(paths.backups(app.name));
         if (free.bavail * free.bsize < size * 2 + 1024 ** 3) {
-          failure(product.name, named, "too little room on the disk (it keeps 1GB free)");
+          failure(app.name, named, "too little room on the disk (it keeps 1GB free)");
           continue;
         }
         const copy = join(work, "copy.db");
         const made = await run(node, [cli, "copy-database", db, copy], { as: user });
         if (made.code !== 0) {
-          failure(product.name, named, made.stderr.trim().split("\n").at(-1) ?? "");
+          failure(app.name, named, made.stderr.trim().split("\n").at(-1) ?? "");
           continue;
         }
         const to = join(night, named);
@@ -387,30 +402,29 @@ export async function backup(server: Server, today = new Date().toISOString().sl
           copied++;
         } catch (error) {
           await rm(`${to}.partial`, { force: true });
-          failure(product.name, named, error instanceof Error ? error.message : String(error));
+          failure(app.name, named, error instanceof Error ? error.message : String(error));
         }
       }
       await rm(work, { recursive: true, force: true });
-      const nights = (await readdir(paths.backups(product.name)).catch(() => [] as string[])).filter((n) => /^\d{4}-\d{2}-\d{2}$/.test(n)).sort();
-      for (const old of nights.slice(0, Math.max(0, nights.length - NIGHTS)))
-        await rm(join(paths.backups(product.name), old), { recursive: true, force: true });
+      const nights = (await readdir(paths.backups(app.name)).catch(() => [] as string[])).filter((n) => /^\d{4}-\d{2}-\d{2}$/.test(n)).sort();
+      for (const old of nights.slice(0, Math.max(0, nights.length - NIGHTS))) await rm(join(paths.backups(app.name), old), { recursive: true, force: true });
     } catch (error) {
-      failure(product.name, "its databases", error instanceof Error ? error.message : String(error));
+      failure(app.name, "its databases", error instanceof Error ? error.message : String(error));
     }
   }
   return { copied, failed };
 }
 
 /**
- * Root takes the product's copy by reading it, never by moving it or changing its
- * owner: the folder is the product's, so what's there could be a link to anything.
- * Only a plain file the product owns is read, into a new file only root can read.
+ * Root takes the app's copy by reading it, never by moving it or changing its
+ * owner: the folder is the app's, so what's there could be a link to anything.
+ * Only a plain file the app owns is read, into a new file only root can read.
  */
 export async function takeCopy(from: string, to: string, owner: number): Promise<void> {
   const source = await open(from, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const found = await source.stat();
-    if (!found.isFile() || found.uid !== owner || found.nlink !== 1) throw new Error("it isn't a plain file of the product's own");
+    if (!found.isFile() || found.uid !== owner || found.nlink !== 1) throw new Error("it isn't a plain file of the app's own");
     await rm(to, { force: true });
     const target = await open(to, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
     try {
@@ -426,7 +440,7 @@ export async function takeCopy(from: string, to: string, owner: number): Promise
   }
 }
 
-/** Run as the product's user, by backup: one database copied with SQLite's online backup. */
+/** Run as the app's user, by backup: one database copied with SQLite's online backup. */
 export async function copyDatabase(from: string, to: string): Promise<void> {
   const { DatabaseSync, backup: copy } = await import("node:sqlite");
   if (!(await stat(from)).isFile()) throw new Error("not a file");

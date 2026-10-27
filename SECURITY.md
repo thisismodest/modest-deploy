@@ -29,13 +29,13 @@ Anything that breaks a promise in [README.md](README.md) or
 - getting the server to deploy, run, or install anything that isn't a commit on
   `main` that passed CI;
 - a deploy message accepted without a valid signature;
-- one product reading or changing another's code, data, or keys, or the server's;
+- one app reading or changing another's code, data, or keys, or the server's;
 - a key or secret appearing anywhere it shouldn't (logs, errors, the repository).
 
 ## Out of scope
 
 The server's own setup, which modest-deploy checks but doesn't do (see "Before you
-install" in the README), and the products themselves. Reports of setup mistakes
+install" in the README), and the apps themselves. Reports of setup mistakes
 `modest-deploy check` could catch are still welcome, as ordinary issues.
 
 ## What we do to stay secure

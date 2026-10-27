@@ -106,7 +106,7 @@ async function check(n: number, what: string, body: () => Promise<void> | void) 
   }
 }
 
-// ---- The stand-in GitHub, and the products' repositories
+// ---- The stand-in GitHub, and the apps' repositories
 
 const work = (name: string) => `/root/work/${name}`;
 const probeSource = (version: string, mode = "normal") => readFileSync("/e2e/probe.js", "utf8").replace("__VERSION__", version).replace("__MODE__", mode);
@@ -136,7 +136,7 @@ function push(name: string, message: string): string {
   return sh("git", ["rev-parse", "HEAD"], { cwd: work(name) }).trim();
 }
 
-/** A new version of a probe product, pushed but not yet deployed. */
+/** A new version of a probe app, pushed but not yet deployed. */
 let counter = 0;
 function version(name: string, mode = "normal"): { sha: string; label: string } {
   counter += 1;
@@ -217,12 +217,12 @@ async function settled() {
   throw new Error("the deploy never finished");
 }
 
-// ---- The products
+// ---- The apps
 
-const productPort = (name: string): number => JSON.parse(readFileSync(`/etc/modest-deploy/products/${name}.json`, "utf8")).port;
+const appPort = (name: string): number => JSON.parse(readFileSync(`/etc/modest-deploy/apps/${name}.json`, "utf8")).port;
 const answer = async (name: string, path = "/") => {
   try {
-    return await (await fetch(`http://127.0.0.1:${productPort(name)}${path}`, { signal: AbortSignal.timeout(10000) })).text();
+    return await (await fetch(`http://127.0.0.1:${appPort(name)}${path}`, { signal: AbortSignal.timeout(10000) })).text();
   } catch {
     return "(nothing)";
   }
@@ -233,7 +233,7 @@ const uid = (user: string) => Number(sh("id", ["-u", user]).trim());
 type Tried = { result: string; value?: unknown };
 type Action = Record<string, unknown> & { op: string };
 async function tryAs(name: string, actions: Action[]): Promise<Tried[]> {
-  const response = await fetch(`http://127.0.0.1:${productPort(name)}/try`, { method: "POST", body: JSON.stringify(actions) });
+  const response = await fetch(`http://127.0.0.1:${appPort(name)}/try`, { method: "POST", body: JSON.stringify(actions) });
   return JSON.parse(await response.text());
 }
 const tryOne = async (name: string, action: Action) => (await tryAs(name, [action]))[0] ?? { result: "no answer" };
@@ -303,9 +303,9 @@ function pinStandIn() {
   writeFileSync("/etc/modest-deploy/keys/known_hosts", `github.com ${hostKey}\n`);
 }
 
-// ---- Setup: two probe products, alpha and beta, live
+// ---- Setup: two probe apps, alpha and beta, live
 
-console.log("== setup: products alpha and beta, from local repositories");
+console.log("== setup: apps alpha and beta, from local repositories");
 const added: Record<string, { deployKey: string; secret: string }> = {};
 for (const name of ["alpha", "beta"]) {
   const extra = name === "alpha" ? ["--redirect", "www.alpha.example.org"] : [];
@@ -324,8 +324,8 @@ for (const name of ["alpha", "beta"]) {
   await deploy(name, live[name]);
 }
 console.log("   alpha and beta are live");
-const alphaPort = productPort("alpha");
-const betaPort = productPort("beta");
+const alphaPort = appPort("alpha");
+const betaPort = appPort("beta");
 
 /** After a check fails partway, puts alpha back as it was: a clean working copy, an ordinary version live. */
 async function recover() {
@@ -451,7 +451,7 @@ const slowBody = (async () => {
     assert.equal(mainPid("alpha"), before, "alpha wasn't restarted");
   });
 
-  await check(12, "a product that doesn't exist gets the same answer as a wrong signature", async () => {
+  await check(12, "an app that doesn't exist gets the same answer as a wrong signature", async () => {
     const wrong = message("alpha", pending.sha, { secret: "wrong" });
     const a = await send(wrong);
     const b = await send({ ...wrong, path: "/deploy/nosuch" });
@@ -568,7 +568,7 @@ await check(9, "a commit that failed isn't tried again by a message, only by han
   assert.equal(await answer("alpha"), before);
 });
 
-// ---- A bad deploy, and what a product must do
+// ---- A bad deploy, and what an app must do
 
 await check(26, "a version that crashes, never answers, or answers 500: each time, the previous serves again", async () => {
   const before = live.alpha?.label ?? "";
@@ -623,7 +623,7 @@ await check(61, "the app gets PORT, HOST=127.0.0.1, and DATA_DIR; its port is re
 
 // ---- Install scripts, and a repository's own settings
 
-await check(22, "a dependency's and the product's own install scripts don't run, and the deploy succeeds", async () => {
+await check(22, "a dependency's and the app's own install scripts don't run, and the deploy succeeds", async () => {
   mkdirSync(`${work("alpha")}/dep`, { recursive: true });
   const scripts = (who: string) => ({
     preinstall: `${MARK} ${who}-preinstall`,
@@ -632,7 +632,7 @@ await check(22, "a dependency's and the product's own install scripts don't run,
     prepare: `${MARK} ${who}-prepare`,
   });
   writeFileSync(`${work("alpha")}/dep/package.json`, JSON.stringify({ name: "dep", version: "1.0.0", scripts: scripts("dep") }));
-  basePackage("alpha", { dependencies: { dep: "file:./dep" }, scripts: scripts("product") });
+  basePackage("alpha", { dependencies: { dep: "file:./dep" }, scripts: scripts("app") });
   const v = version("alpha");
   clearMarkers();
   await deploy("alpha", v);
@@ -681,7 +681,7 @@ await check(24, "a repository's .npmrc can't choose git, the script shell, scrip
   ].join("\n");
 
   // First with a dependency from npm itself, which can only install if the registry setting is ignored.
-  basePackage("alpha", { dependencies: { "modest-auth": "0.3.0" }, scripts: { postinstall: `${MARK} product-postinstall` } });
+  basePackage("alpha", { dependencies: { "modest-auth": "0.3.0" }, scripts: { postinstall: `${MARK} app-postinstall` } });
   writeFileSync(`${work("alpha")}/.npmrc`, npmrc);
   const registry = version("alpha");
   clearMarkers();
@@ -881,7 +881,7 @@ async function withQueueHeld(fill: () => void) {
   await settled().catch(() => {});
 }
 
-await check(16, "request files naming an unknown product, or with a bad commit: the deploy service starts and does nothing", async () => {
+await check(16, "request files naming an unknown app, or with a bad commit: the deploy service starts and does nothing", async () => {
   const pending = version("alpha");
   // What a real request looks like, as the listener writes it.
   sh("systemctl", ["stop", "modest-deploy-deploy.path"]);
@@ -984,7 +984,7 @@ await check(31, "as alpha's build user: beta's deploy key and repository copy ca
   assert.equal(as("/srv/modest-deploy/alpha/source.git/HEAD"), 0, "its own repository copy");
 });
 
-// ---- A product reaching another, or the server
+// ---- An app reaching another, or the server
 
 await check(17, "alpha can't read beta's environment, data, or code, /root, host keys, deploy keys, webhook secrets, or /etc/shadow", async () => {
   await tryAs("beta", [{ op: "write", path: "/var/lib/modest-deploy/beta/private.txt" }]);
@@ -1141,14 +1141,14 @@ await check(20, "alpha allocating without limit is stopped at its memory limit; 
 // ---- Memory, given out so the server can't run out
 
 const MB = 1024 ** 2;
-/** What the server has for products, as modest-deploy works it out (a quarter kept, never under 384M). */
-const forProducts = () => {
+/** What the server has for apps, as modest-deploy works it out (a quarter kept, never under 384M). */
+const forApps = () => {
   const all = Math.floor(totalmem() / MB);
   return all - Math.min(all, Math.max(384, Math.ceil(all / 4)));
 };
 const listed = () => md("list").out;
 
-await check(63, "each product's memory is set aside and is its ceiling, Node sees it as its limit, and its thread pool fits the cores", async () => {
+await check(63, "each app's memory is set aside and is its ceiling, Node sees it as its limit, and its thread pool fits the cores", async () => {
   const props = run("systemctl", ["show", "-p", "MemoryMax,MemoryLow", "modest-deploy-alpha.service"]).out.trim();
   const given = JSON.parse(await answer("alpha", "/given"));
   note(
@@ -1159,30 +1159,30 @@ await check(63, "each product's memory is set aside and is its ceiling, Node see
   assert.equal(given.memory, 512 * MB, "Node in alpha sees its 512M as the memory it may use");
   assert.equal(given.pool, String(Math.min(availableParallelism() + 2, 18)), "a thread pool of the cores and two");
   const deployMax = Number(run("systemctl", ["show", "-p", "MemoryMax", "--value", DEPLOY]).out.trim());
-  assert.ok(deployMax <= 1024 * MB && deployMax < totalmem() - forProducts() * MB, "a deploy builds within the server's own share");
+  assert.ok(deployMax <= 1024 * MB && deployMax < totalmem() - forApps() * MB, "a deploy builds within the server's own share");
 });
 
-await check(64, "a product is added, or resized, only if its memory fits beside the others'; max gives what's left", async () => {
-  // Every product here counts, those inside.ts added too (512M each, unless their settings say)
-  const given = readdirSync("/etc/modest-deploy/products")
+await check(64, "an app is added, or resized, only if its memory fits beside the others'; max gives what's left", async () => {
+  // Every app here counts, those inside.ts added too (512M each, unless their settings say)
+  const given = readdirSync("/etc/modest-deploy/apps")
     .filter((f) => f.endsWith(".json"))
-    .reduce((sum, f) => sum + (JSON.parse(readFileSync(`/etc/modest-deploy/products/${f}`, "utf8")).memory ?? 512), 0);
-  const room = forProducts() - given;
+    .reduce((sum, f) => sum + (JSON.parse(readFileSync(`/etc/modest-deploy/apps/${f}`, "utf8")).memory ?? 512), 0);
+  const room = forApps() - given;
   const tooMuch = md("add", "gamma", "--domain", "gamma.example.org", "--repo", "example/gamma", "--memory", `${room + 1}M`);
   note(`room for ${room}M: ${tooMuch.out.trim().split("\n").at(-1)}`);
   assert.notEqual(tooMuch.code, 0, "more than there's room for was added");
-  assert.ok(!existsSync("/etc/modest-deploy/products/gamma.json"), "and left settings behind");
+  assert.ok(!existsSync("/etc/modest-deploy/apps/gamma.json"), "and left settings behind");
   assert.equal(md("add", "gamma", "--domain", "gamma.example.org", "--repo", "example/gamma", "--memory", "max").code, 0);
   try {
     assert.match(listed(), new RegExp(`^gamma .* ${room >= 1024 && room % 512 === 0 ? `${room / 1024}G` : `${room}M`} `, "m"), "max: all that's left");
     const more = md("add", "delta", "--domain", "delta.example.org", "--repo", "example/delta");
-    assert.notEqual(more.code, 0, "a product added with no room left");
-    assert.match(more.out, /no room for another product/);
+    assert.notEqual(more.code, 0, "an app added with no room left");
+    assert.match(more.out, /no room for another app/);
     assert.equal(md("resize", "gamma", "--memory", "256M").code, 0);
     assert.match(listed(), /^gamma .* 256M /m);
     assert.match(run("systemctl", ["show", "-p", "MemoryMax", "--value", "modest-deploy-gamma.service"]).out, new RegExp(String(256 * MB)));
-    assert.notEqual(md("resize", "alpha", "--memory", `${forProducts()}M`).code, 0, "resized past the room there is");
-    assert.match(listed(), /^Memory: .* given to products/m);
+    assert.notEqual(md("resize", "alpha", "--memory", `${forApps()}M`).code, 0, "resized past the room there is");
+    assert.match(listed(), /^Memory: .* given to apps/m);
   } finally {
     md("remove", "gamma");
   }
@@ -1190,13 +1190,13 @@ await check(64, "a product is added, or resized, only if its memory fits beside 
 
 await check(
   65,
-  "with products filling every byte they're given, and a deploy at the same time, the server still answers: SSH, Caddy, the listener, and the deploy",
+  "with apps filling every byte they're given, and a deploy at the same time, the server still answers: SSH, Caddy, the listener, and the deploy",
   async () => {
     // Alpha given all that's left, then alpha and beta both hold on to memory until stopped, while beta deploys.
     assert.equal(md("resize", "alpha", "--memory", "max").code, 0);
     for (let i = 0; i < 60 && !(await isLive()); i++) await sleep(1000);
     try {
-      const hold = (name: string) => fetch(`http://127.0.0.1:${productPort(name)}/alloc`, { signal: AbortSignal.timeout(300000) }).catch(() => null);
+      const hold = (name: string) => fetch(`http://127.0.0.1:${appPort(name)}/alloc`, { signal: AbortSignal.timeout(300000) }).catch(() => null);
       const holding = [hold("alpha"), hold("beta")];
       const next = version("beta");
       await send(message("beta", next.sha));
@@ -1234,7 +1234,7 @@ await check(
   },
 );
 
-await check(58, "a product that keeps crashing restarts with growing delays", async () => {
+await check(58, "an app that keeps crashing restarts with growing delays", async () => {
   const props = run("systemctl", ["show", "-p", "Restart,RestartUSec,RestartSteps,RestartMaxDelayUSec", "modest-deploy-alpha.service"]).out.trim();
   note(props.replace(/\n/g, ", "));
   const delays: number[] = [];
@@ -1260,7 +1260,7 @@ await check(58, "a product that keeps crashing restarts with growing delays", as
 await check(39, "the deploy unit has a memory limit (half the server's own share, from 192M to 1G) and no devices", async () => {
   const props = run("systemctl", ["show", "-p", "MemoryMax,PrivateDevices,DevicePolicy,DeviceAllow", DEPLOY]).out.trim();
   note(props.replace(/\n/g, ", "));
-  const kept = Math.floor(totalmem() / MB) - forProducts();
+  const kept = Math.floor(totalmem() / MB) - forApps();
   assert.match(props, new RegExp(`MemoryMax=${Math.min(1024, Math.max(192, Math.floor(kept / 2))) * MB}`));
   assert.ok(/PrivateDevices=yes/.test(props) || (/DevicePolicy=closed|DevicePolicy=strict/.test(props) && /DeviceAllow=$/m.test(props)), "devices");
 });
@@ -1275,7 +1275,7 @@ await check(56, "add gives a system user, a folder, an environment file (600, fo
   const env = statSync("/etc/modest-deploy/env/alpha.env");
   note(`environment file: mode ${(env.mode & 0o777).toString(8)}, owner ${env.uid} (md-alpha is ${uid("md-alpha")})`);
   assert.equal(env.mode & 0o777, 0o600);
-  // "The product's": for alpha alone. systemd reads it as root, so root's, or alpha's, keeps it so.
+  // "The app's": for alpha alone. systemd reads it as root, so root's, or alpha's, keeps it so.
   assert.ok([0, uid("md-alpha")].includes(env.uid), "owned by someone else");
   assert.notEqual(run("runuser", ["-u", "md-beta", "--", "cat", "/etc/modest-deploy/env/alpha.env"]).code, 0, "beta's user reads it");
   assert.equal(run("systemctl", ["is-enabled", "modest-deploy-alpha.service"]).out.trim(), "enabled");
@@ -1284,16 +1284,16 @@ await check(56, "add gives a system user, a folder, an environment file (600, fo
   assert.equal(valid.code, 0, valid.out.slice(-500));
 });
 
-await check(57, "a domain another product uses: refused", async () => {
+await check(57, "a domain another app uses: refused", async () => {
   for (const domain of ["alpha.example.org", "www.alpha.example.org", "deploy.example.org"]) {
     const out = md("add", "gamma", "--domain", domain, "--repo", "example/gamma");
     note(`${domain}: exit ${out.code}`);
     assert.notEqual(out.code, 0, domain);
-    assert.equal(existsSync("/etc/modest-deploy/products/gamma.json"), false, `${domain}: gamma was added`);
+    assert.equal(existsSync("/etc/modest-deploy/apps/gamma.json"), false, `${domain}: gamma was added`);
   }
 });
 
-await check(40, "a redirect that's another product's domain or redirect, the deploy domain, or not a domain: refused", async () => {
+await check(40, "a redirect that's another app's domain or redirect, the deploy domain, or not a domain: refused", async () => {
   const site = readFileSync("/etc/modest-deploy/caddy/beta.caddy", "utf8");
   for (const redirect of [
     "alpha.example.org",
@@ -1533,7 +1533,7 @@ await check(45, "each unsafe setting: check fails with the fix, and install and 
       const checked = md("check");
       const install = md("install");
       const add = md("add", "gamma", "--domain", "gamma.example.org", "--repo", "example/gamma");
-      const added = existsSync("/etc/modest-deploy/products/gamma.json");
+      const added = existsSync("/etc/modest-deploy/apps/gamma.json");
       const said = checked.out.split("\n").filter((l) => /fix|✗|fail|no\b|not\b|listen|password|root|update/i.test(l));
       note(`${what}: check ${checked.code}, install ${install.code}, add ${add.code}; ${JSON.stringify(said.slice(0, 2))}`);
       if (checked.code === 0) failures.push(`${what}: check passed`);
@@ -1547,7 +1547,7 @@ await check(45, "each unsafe setting: check fails with the fix, and install and 
         ? ""
         : ` (install ${installed.code}: ${JSON.stringify(installed.out.trim().split("\n").slice(-3))}; add ${addedAnyway.code}: ${JSON.stringify(addedAnyway.out.trim().split("\n").slice(-3))})`;
       anyway.push(`${what}: ${goOn ? "went on" : "refused"}${why}`);
-      if (existsSync("/etc/modest-deploy/products/gamma.json")) md("remove", "gamma");
+      if (existsSync("/etc/modest-deploy/apps/gamma.json")) md("remove", "gamma");
     } finally {
       await change.undo();
     }
@@ -1600,17 +1600,17 @@ await check(
     assert.deepEqual(after, before, "the units changed");
     const untouched = before.filter((u) => lstatSync(`/etc/systemd/system/${u}`).mtimeMs === times[u] && !lstatSync(`/etc/systemd/system/${u}`).isDirectory());
     note(`${before.length} units; unchanged on disk (the same content, perhaps not written again): ${JSON.stringify(untouched)}`);
-    // What "rewrites" promises: a product's unit that's out of date is brought up to date.
+    // What "rewrites" promises: an app's unit that's out of date is brought up to date.
     const unit = "/etc/systemd/system/modest-deploy-alpha.service";
     writeFileSync(unit, `${readFileSync(unit, "utf8")}# e2e: out of date\n`);
     assert.equal(md("install").code, 0);
-    assert.doesNotMatch(readFileSync(unit, "utf8"), /e2e: out of date/, "a product's unit wasn't rewritten");
+    assert.doesNotMatch(readFileSync(unit, "utf8"), /e2e: out of date/, "an app's unit wasn't rewritten");
     assert.equal(readFileSync("/etc/caddy/Caddyfile", "utf8"), caddyfile, "the Caddyfile changed");
     assert.equal(await answer("alpha"), live.alpha?.label);
   },
 );
 
-await check(59, "a product's output is in its journal; no secret in the logs", async () => {
+await check(59, "an app's output is in its journal; no secret in the logs", async () => {
   const own = run("journalctl", ["-u", "modest-deploy-alpha.service", "-o", "cat", "--no-pager"]).out;
   assert.match(own, /probe alpha v\d+ starting/);
   const everything = run("journalctl", ["-o", "cat", "--no-pager"]).out;

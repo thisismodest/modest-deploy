@@ -1,15 +1,19 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { onServer, PRODUCT } from "../test/helpers.ts";
+import { APP, onServer } from "../test/helpers.ts";
+import { readApp, takenDomain, writeWhole } from "./apps.ts";
 import { checkServer, outsidePorts } from "./check.ts";
 import { isServer, launch, listServers } from "./launch.ts";
 import type { Machine } from "./memory.ts";
 import { layout } from "./paths.ts";
-import { readProduct, takenDomain, writeWhole } from "./products.ts";
 import type { Ran, Run, RunOptions } from "./run.ts";
-import { deployService, hostSite, listenerService, productService, productSite } from "./units.ts";
+import { moveOldSettings } from "./server.ts";
+import { appService, appSite, deployService, hostSite, listenerService } from "./units.ts";
 
 const ok = (stdout = ""): Ran => ({ code: 0, stdout, stderr: "" });
 const MB = 1024 ** 2;
@@ -63,8 +67,8 @@ test("password sign-in, root sign-in, no automatic updates, and an open port are
   assert.match(failed.find((f) => f.what.startsWith("nothing listening"))?.fix ?? "", /0\.0\.0\.0:3000/);
 });
 
-test("each product runs as its own user, sandboxed, able to bind only its own port, with the server's secrets out of reach", () => {
-  const unit = productService(layout(), PRODUCT, "/usr/bin/node", SMALL);
+test("each app runs as its own user, sandboxed, able to bind only its own port, with the server's secrets out of reach", () => {
+  const unit = appService(layout(), APP, "/usr/bin/node", SMALL);
   for (const line of [
     "User=md-shop",
     "NoNewPrivileges=yes",
@@ -88,21 +92,21 @@ test("each product runs as its own user, sandboxed, able to bind only its own po
 });
 
 test("nothing unchecked can reach a unit or a Caddy site, so no value can add a line of its own", () => {
-  assert.throws(() => productService(layout(), { ...PRODUCT, name: "shop\nExecStartPre=/bin/sh" }, "/usr/bin/node", SMALL));
-  assert.throws(() => productSite({ ...PRODUCT, domain: "shop.example.org {\n}\nevil.example.org" }));
-  assert.throws(() => productSite({ ...PRODUCT, port: 22 }));
+  assert.throws(() => appService(layout(), { ...APP, name: "shop\nExecStartPre=/bin/sh" }, "/usr/bin/node", SMALL));
+  assert.throws(() => appSite({ ...APP, domain: "shop.example.org {\n}\nevil.example.org" }));
+  assert.throws(() => appSite({ ...APP, port: 22 }));
   assert.throws(() => hostSite("x.org\n\troot * /"));
-  assert.equal(productSite(PRODUCT), "# Written by modest-deploy: changes here are replaced.\nshop.example.org {\n\treverse_proxy 127.0.0.1:4100\n}\n");
+  assert.equal(appSite(APP), "# Written by modest-deploy: changes here are replaced.\nshop.example.org {\n\treverse_proxy 127.0.0.1:4100\n}\n");
 });
 
-test("a redirect sends visitors to the product's own domain, at the same path, and never reaches the product", () => {
+test("a redirect sends visitors to the app's own domain, at the same path, and never reaches the app", () => {
   assert.equal(
-    productSite({ ...PRODUCT, redirects: ["www.shop.example.org"] }),
+    appSite({ ...APP, redirects: ["www.shop.example.org"] }),
     "# Written by modest-deploy: changes here are replaced.\nshop.example.org {\n\treverse_proxy 127.0.0.1:4100\n}\n\nwww.shop.example.org {\n\tredir https://shop.example.org{uri} permanent\n}\n",
   );
 });
 
-test("no redirect can add a line to a Caddy site, name the product's own domain, or be one of too many", () => {
+test("no redirect can add a line to a Caddy site, name the app's own domain, or be one of too many", () => {
   for (const redirects of [
     ["www.shop.example.org {\n}\nevil.example.org"],
     ["www.shop.example.org\n\treverse_proxy 127.0.0.1:22"],
@@ -111,30 +115,30 @@ test("no redirect can add a line to a Caddy site, name the product's own domain,
     ["www.shop.example.org", "www.shop.example.org"],
     Array.from({ length: 11 }, (_, i) => `r${i}.example.org`),
   ]) {
-    assert.throws(() => productSite({ ...PRODUCT, redirects }), JSON.stringify(redirects));
+    assert.throws(() => appSite({ ...APP, redirects }), JSON.stringify(redirects));
   }
 });
 
-test("a product can't take another's domain or redirect, or the deploy domain, by its own domain or a redirect", () => {
+test("an app can't take another's domain or redirect, or the deploy domain, by its own domain or a redirect", () => {
   const host = { domain: "deploy.example.org" };
-  const other = { ...PRODUCT, name: "blog", domain: "blog.example.org", redirects: ["www.blog.example.org"], port: 4101 };
+  const other = { ...APP, name: "blog", domain: "blog.example.org", redirects: ["www.blog.example.org"], port: 4101 };
   for (const domain of ["blog.example.org", "www.blog.example.org", "deploy.example.org"]) {
-    assert.equal(takenDomain({ ...PRODUCT, redirects: [domain] }, [other], host), domain);
-    assert.equal(takenDomain({ ...PRODUCT, domain, redirects: [] }, [other], host), domain);
+    assert.equal(takenDomain({ ...APP, redirects: [domain] }, [other], host), domain);
+    assert.equal(takenDomain({ ...APP, domain, redirects: [] }, [other], host), domain);
   }
   // Its own, added again, isn't taken.
-  const shop = { ...PRODUCT, redirects: ["www.shop.example.org"] };
+  const shop = { ...APP, redirects: ["www.shop.example.org"] };
   assert.equal(takenDomain(shop, [other, shop], host), null);
 });
 
 test("a settings file's redirects are checked when read: one changed by hand can't reach Caddy, and one from before redirects has none", async () => {
   await onServer(async (paths) => {
-    const { name, domain, repo, port } = PRODUCT;
-    await writeWhole(paths.product(name), JSON.stringify({ name, domain, repo, port }));
-    assert.deepEqual((await readProduct(paths, name))?.redirects, []);
+    const { name, domain, repo, port } = APP;
+    await writeWhole(paths.app(name), JSON.stringify({ name, domain, repo, port }));
+    assert.deepEqual((await readApp(paths, name))?.redirects, []);
     for (const redirects of ["www.shop.example.org", ["evil.example.org {\n}"], [domain], [1]]) {
-      await writeWhole(paths.product(name), JSON.stringify({ name, domain, redirects, repo, port }));
-      await assert.rejects(readProduct(paths, name), JSON.stringify(redirects));
+      await writeWhole(paths.app(name), JSON.stringify({ name, domain, redirects, repo, port }));
+      await assert.rejects(readApp(paths, name), JSON.stringify(redirects));
     }
   });
 });
@@ -144,7 +148,7 @@ test("an SSH destination is a host or user@host, never anything a shell or ssh w
   for (const bad of ["", "-oProxyCommand=x", "a b", "user@host;id", "host$(id)", "@host", "user@-host", "a\nb"]) assert.ok(!isServer(bad), bad);
 });
 
-test("launch makes the repository, adds the product over SSH, and gives GitHub the key and webhook, with the secret only on standard input", async () => {
+test("launch makes the repository, adds the app over SSH, and gives GitHub the key and webhook, with the secret only on standard input", async () => {
   const calls: { program: string; args: string[]; options: RunOptions }[] = [];
   const secret = "c".repeat(64);
   const run: Run = async (program, args, options = {}) => {
@@ -212,7 +216,7 @@ test("launch gives the server the redirects as one checked word, and asks for ea
   assert.ok(lines.some((l) => l.includes("shop.example.org, www.shop.example.org, shop.example.com")));
 });
 
-test("without gh, or signed out of it, launch changes nothing, and says how to get it, or do it by hand with this product's own command", async () => {
+test("without gh, or signed out of it, launch changes nothing, and says how to get it, or do it by hand with this app's own command", async () => {
   for (const [state, ran, says] of [
     ["not installed", { code: 1, stdout: "", stderr: "spawn gh ENOENT" }, /install it[\s\S]*cli\.github\.com/i],
     ["signed out", { code: 1, stdout: "", stderr: "You are not logged into any GitHub hosts. To log in, run: gh auth login" }, /gh auth login/],
@@ -328,7 +332,7 @@ test("launch run again updates the webhook already there, and doesn't add the sa
   assert.equal(JSON.parse(patch?.input ?? "").config.secret, "d".repeat(64), "the webhook signs with the new secret");
 });
 
-test("a backup copy is taken only if it's a plain file of the product's own: a link put in its place is refused, and what it points to untouched", async () => {
+test("a backup copy is taken only if it's a plain file of the app's own: a link put in its place is refused, and what it points to untouched", async () => {
   const { mkdtemp, writeFile, symlink, link, readFile, stat } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
@@ -336,7 +340,7 @@ test("a backup copy is taken only if it's a plain file of the product's own: a l
   const dir = await mkdtemp(join(tmpdir(), "modest-deploy-copy-"));
   const me = process.getuid?.() ?? 0;
   const precious = join(dir, "precious");
-  await writeFile(precious, "not the product's", { mode: 0o644 });
+  await writeFile(precious, "not the app's", { mode: 0o644 });
   await symlink(precious, join(dir, "linked.db"));
   await assert.rejects(takeCopy(join(dir, "linked.db"), join(dir, "out1"), me));
   await link(precious, join(dir, "hard.db"));
@@ -391,12 +395,12 @@ test("a Match block that allows root for one outside address is found, in a file
   assert.equal((await checkServer(run, read)).find((f) => f.what.startsWith("SSH: no Match block"))?.ok, true);
 });
 
-test("a product's memory is set aside for it and is its ceiling, and its thread pool fits the cores", () => {
-  const unit = productService(layout(), { ...PRODUCT, memory: 1536 }, "/usr/bin/node", { total: 8 * 1024 * MB, cores: 6 });
+test("an app's memory is set aside for it and is its ceiling, and its thread pool fits the cores", () => {
+  const unit = appService(layout(), { ...APP, memory: 1536 }, "/usr/bin/node", { total: 8 * 1024 * MB, cores: 6 });
   for (const line of ["MemoryMax=1536M", "MemoryLow=1536M", "Environment=UV_THREADPOOL_SIZE=8"]) assert.ok(unit.split("\n").includes(line), line);
-  const big = productService(layout(), PRODUCT, "/usr/bin/node", { total: 256 * 1024 * MB, cores: 64 });
+  const big = appService(layout(), APP, "/usr/bin/node", { total: 256 * 1024 * MB, cores: 64 });
   assert.ok(big.split("\n").includes("Environment=UV_THREADPOOL_SIZE=18"), "never more than 18");
-  assert.throws(() => productService(layout(), { ...PRODUCT, memory: 64 }, "/usr/bin/node", SMALL), "too little to run");
+  assert.throws(() => appService(layout(), { ...APP, memory: 64 }, "/usr/bin/node", SMALL), "too little to run");
 });
 
 test("the deploy service builds within the server's own share of memory", () => {
@@ -408,18 +412,29 @@ test("the deploy service builds within the server's own share of memory", () => 
   );
 });
 
-test("products given more memory than the server has for them are found, with what to do", async () => {
+test("apps given more memory than the server has for them are found, with what to do", async () => {
   const run = server({});
   const finding = async (memories: number[]) =>
-    (
-      await checkServer(run, async () => "", undefined, { products: memories.map((memory, i) => ({ ...PRODUCT, name: `p${i}`, memory })), machine: SMALL })
-    ).find((f) => f.what.startsWith("products' memory"));
+    (await checkServer(run, async () => "", undefined, { apps: memories.map((memory, i) => ({ ...APP, name: `p${i}`, memory })), machine: SMALL })).find((f) =>
+      f.what.startsWith("apps' memory"),
+    );
   assert.equal((await finding([512]))?.ok, true);
   assert.equal((await finding([256, 256]))?.ok, true);
   const over = await finding([512, 512]);
   assert.equal(over?.ok, false);
-  assert.match(over?.fix ?? "", /1G given to products, which have 576M here/);
+  assert.match(over?.fix ?? "", /1G given to apps, which have 576M here/);
   assert.match(over?.fix ?? "", /modest-deploy resize/);
+});
+
+test("a server too small to run an app is found, with what to do", async () => {
+  const run = server({});
+  const finding = async (total: number) =>
+    (await checkServer(run, async () => "", undefined, { apps: [], machine: { total: total * MB, cores: 1 } })).find((f) => f.what.startsWith("memory enough"));
+  assert.equal((await finding(960))?.ok, true, "1GB");
+  assert.equal((await finding(740))?.ok, true, "768MB: one small app");
+  const tiny = await finding(480);
+  assert.equal(tiny?.ok, false, "512MB");
+  assert.match(tiny?.fix ?? "", /480M[\s\S]*1GB/);
 });
 
 test("launch gives the server a checked memory size, and refuses an odd one before running anything", async () => {
@@ -436,11 +451,13 @@ test("launch gives the server a checked memory size, and refuses an odd one befo
           webhook: "https://deploy.example.org/deploy/shop",
           secret: "c".repeat(64),
           deployKey: "ssh-ed25519 AAAA modest-deploy shop",
+          memory: 768,
         }),
       );
     if (program === "gh" && args[0] === "api" && args.length === 2) return ok("[]");
     return ok();
   };
+  const said: string[] = [];
   await launch(
     run,
     {
@@ -453,8 +470,9 @@ test("launch gives the server a checked memory size, and refuses an odd one befo
       visibility: "private",
       memory: "768M",
     },
-    () => {},
+    (line) => said.push(line),
   );
+  assert.ok(said.includes("Added shop on myserver, with 768M of memory."), "says how much it was given");
   const ssh = calls.find((c) => c[0] === "ssh") ?? [];
   assert.deepEqual(ssh.slice(ssh.indexOf("--memory"), ssh.indexOf("--memory") + 2), ["--memory", "768M"]);
   for (const memory of ["768M; reboot", "lots", "1.5G", "-1G"]) {
@@ -480,7 +498,7 @@ test("launch gives the server a checked memory size, and refuses an odd one befo
   }
 });
 
-test("list --server lists each server's products in turn, over SSH, refusing an odd server before running anything", async () => {
+test("list --server lists each server's apps in turn, over SSH, refusing an odd server before running anything", async () => {
   const calls: string[][] = [];
   const said: string[] = [];
   const run: Run = async (program, args) => {
@@ -503,6 +521,20 @@ test("list --server lists each server's products in turn, over SSH, refusing an 
     /server/,
   );
   assert.deepEqual(calls, [], "nothing ran");
+});
+
+test("an install from before apps were called apps has its settings moved to apps/, once, and never over ones already there", async () => {
+  await onServer(async (paths) => {
+    const old = join(dirname(paths.apps), "products");
+    await writeWhole(join(old, "shop.json"), "{}");
+    await moveOldSettings(paths);
+    assert.equal(await readFile(paths.app("shop"), "utf8"), "{}");
+    assert.ok(!existsSync(old), "the old folder is gone");
+    await writeWhole(join(old, "blog.json"), "{}");
+    await moveOldSettings(paths);
+    assert.ok(existsSync(join(old, "blog.json")), "never over an apps/ folder already there");
+    assert.ok(!existsSync(paths.app("blog")));
+  });
 });
 
 const CLI = fileURLToPath(new URL("./cli.ts", import.meta.url));
@@ -530,7 +562,7 @@ test("asking for a command's help only prints it: the command never runs", () =>
       assert.equal(ran.status, 0, JSON.stringify(args));
       assert.ok(ran.stdout.startsWith(`modest-deploy ${command}`), JSON.stringify(args));
       // Run for real, a command for the server stops at once, as the tests aren't root.
-      assert.doesNotMatch(ran.stdout + ran.stderr, /run it with sudo|isn't installed|the name must be|there's no product/, JSON.stringify(args));
+      assert.doesNotMatch(ran.stdout + ran.stderr, /run it with sudo|isn't installed|the name must be|there's no app/, JSON.stringify(args));
     }
   }
 });

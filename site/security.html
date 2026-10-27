@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'" />
     <meta name="referrer" content="no-referrer" />
-    <title>Security: modest-deploy, deploy Node products to your own server</title>
+    <title>Security: modest-deploy, deploy Node apps to your own server</title>
     <meta name="description" content="What modest-deploy protects, from whom, and how, and what it doesn't do yet." />
     <link rel="canonical" href="https://modest-deploy.com/security.html" />
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
@@ -15,12 +15,12 @@
     <meta property="og:site_name" content="modest-deploy" />
     <meta property="og:locale" content="en_GB" />
     <meta property="og:url" content="https://modest-deploy.com/security.html" />
-    <meta property="og:title" content="Security: modest-deploy, deploy Node products to your own server" />
+    <meta property="og:title" content="Security: modest-deploy, deploy Node apps to your own server" />
     <meta property="og:description" content="What modest-deploy protects, from whom, and how, and what it doesn't do yet." />
     <meta property="og:image" content="https://modest-deploy.com/assets/og.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="modest-deploy: Deploy Node products to your own server. No dependencies. Beside it, a product being launched with one command." />
+    <meta property="og:image:alt" content="modest-deploy: Deploy Node apps to your own server. No dependencies. Beside it, an app being launched with one command." />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="stylesheet" href="assets/vendor/modest-ui.min.css" />
     <link rel="stylesheet" href="assets/site.css" />
@@ -70,8 +70,8 @@
             <li><strong>Only main's newest commit that passed CI is ever deployed.</strong></li>
             <li><strong>A message can't make the server run a command.</strong></li>
             <li><strong>Access to GitHub doesn't give access to the server.</strong></li>
-            <li><strong>One product can't read or change another's code, data, or keys,</strong> <span>or the server's.</span></li>
-            <li><strong>A bad deploy doesn't take a product down.</strong></li>
+            <li><strong>One app can't read or change another's code, data, or keys,</strong> <span>or the server's.</span></li>
+            <li><strong>A bad deploy doesn't take an app down.</strong></li>
           </ol>
           <p>Each one is covered by the measures below, with tests, including an end-to-end test on Ubuntu with systemd.</p>
         </section>
@@ -82,20 +82,20 @@
             <table>
               <thead><tr><th scope="col">Against</th><th scope="col">What it does</th></tr></thead>
               <tbody>
-                <tr><td>A forged deploy message</td><td>Each product has its own secret; every message must carry a valid HMAC-SHA256 signature of its exact body, compared in constant time</td></tr>
-                <tr><td>A message for anything but a passed CI run on main</td><td>Only a finished, successful run of the product's CI workflow, for a push to main, in its own repository, deploys</td></tr>
+                <tr><td>A forged deploy message</td><td>Each app has its own secret; every message must carry a valid HMAC-SHA256 signature of its exact body, compared in constant time</td></tr>
+                <tr><td>A message for anything but a passed CI run on main</td><td>Only a finished, successful run of the app's CI workflow, for a push to main, in its own repository, deploys</td></tr>
                 <tr><td>An old message sent again</td><td>Only main's newest commit is ever deployed, and a commit that failed isn't tried again by a message, only by hand</td></tr>
-                <tr><td>A message that names something to run</td><td>The listener runs nothing: it leaves a request holding a known product's name and a commit checked to be 40 hex characters</td></tr>
+                <tr><td>A message that names something to run</td><td>The listener runs nothing: it leaves a request holding a known app's name and a commit checked to be 40 hex characters</td></tr>
                 <tr><td>Someone in GitHub, the repository, or a workflow</td><td>GitHub holds no key to the server, only the webhook secret, which no workflow can read</td></tr>
                 <tr><td>A server pretending to be GitHub</td><td>GitHub's host keys are fetched from GitHub's API over HTTPS at install; nothing is trusted on first use</td></tr>
-                <tr><td>A product taking another port</td><td>Each product can listen only on its own port (on Ubuntu 26.04 LTS, tested end to end)</td></tr>
-                <tr><td>A product reaching another, or the server</td><td>Its own user; a read-only system and code; private <code>/tmp</code>; no new privileges; other users' processes hidden; the server's keys out of reach; write access to its own data only</td></tr>
+                <tr><td>An app taking another port</td><td>Each app can listen only on its own port (on Ubuntu 26.04 LTS, tested end to end)</td></tr>
+                <tr><td>An app reaching another, or the server</td><td>Its own user; a read-only system and code; private <code>/tmp</code>; no new privileges; other users' processes hidden; the server's keys out of reach; write access to its own data only</td></tr>
                 <tr><td>A package's install script</td><td>Dependencies installed exactly as the lockfile says, with install scripts off, by a separate user</td></tr>
                 <tr><td>A repository's own npm or git settings</td><td>Its <code>.npmrc</code> is removed before npm runs, and npm's and git's settings are pinned, so nothing it carries chooses what runs</td></tr>
-                <tr><td>A build reaching another product</td><td>Each product has its own build user, which alone can read its deploy key and its copy of the repository</td></tr>
+                <tr><td>A build reaching another app</td><td>Each app has its own build user, which alone can read its deploy key and its copy of the repository</td></tr>
                 <tr><td>A build that ran code of its own</td><td>All the build user's processes stopped after every step, before root touches its files; each deploy starts it clean; hard links refused</td></tr>
                 <tr><td>A commit filling the shared disk</td><td>Releases over 1GB or 200,000 files refused, sizes counted before anything is written, and 1GB always kept free</td></tr>
-                <tr><td>A bad deploy</td><td>The product is checked once started, and the version before comes back if it doesn't answer</td></tr>
+                <tr><td>A bad deploy</td><td>The app is checked once started, and the version before comes back if it doesn't answer</td></tr>
                 <tr><td>An unsafe server</td><td><code>check</code> looks at SSH, automatic updates, and what's listening, and install and add refuse until it's fixed</td></tr>
                 <tr><td>A key committed to this public repository</td><td>CI fails on IP addresses, private keys, and tokens</td></tr>
               </tbody>
@@ -108,10 +108,10 @@
           <h2 id="limits">What it doesn't do yet</h2>
           <ul class="checks not">
             <li><strong>The server is only as safe as its setup.</strong> modest-deploy checks the main points, but can't see everything, such as a provider's firewall.</li>
-            <li><strong>Products trust their dependencies.</strong> Install scripts are off, but a compromised package still runs when the product does, inside its sandbox.</li>
-            <li id="ubuntu-24"><strong>On Ubuntu 24.04 LTS, a product that's been broken into could listen on another port,</strong> to the outside or on another product's port while that one restarts. modest-deploy lets each product listen only on its own port, but that needs a systemd built with its BPF framework: Ubuntu 26.04 LTS's is, 24.04 LTS's isn't. On 24.04 LTS, the firewall blocks the outside, and <code>check</code> and the nightly run report it.</li>
-            <li><strong>A fetch isn't limited in size,</strong> so someone who can push to a product's main could fill the disk as it's fetched. Deploys stop once less than 1GB is free.</li>
-            <li><strong>The deploy service runs as root,</strong> to own releases and restart products. It runs git and npm as a separate user, and takes only a checked name and commit from a request.</li>
+            <li><strong>Apps trust their dependencies.</strong> Install scripts are off, but a compromised package still runs when the app does, inside its sandbox.</li>
+            <li id="ubuntu-24"><strong>On Ubuntu 24.04 LTS, an app that's been broken into could listen on another port,</strong> to the outside or on another app's port while that one restarts. modest-deploy lets each app listen only on its own port, but that needs a systemd built with its BPF framework: Ubuntu 26.04 LTS's is, 24.04 LTS's isn't. On 24.04 LTS, the firewall blocks the outside, and <code>check</code> and the nightly run report it.</li>
+            <li><strong>A fetch isn't limited in size,</strong> so someone who can push to an app's main could fill the disk as it's fetched. Deploys stop once less than 1GB is free.</li>
+            <li><strong>The deploy service runs as root,</strong> to own releases and restart apps. It runs git and npm as a separate user, and takes only a checked name and commit from a request.</li>
           </ul>
         </section>
 

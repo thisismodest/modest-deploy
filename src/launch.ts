@@ -1,11 +1,11 @@
-// Launching a product, from your computer: make its GitHub repository (from a template,
+// Launching an app, from your computer: make its GitHub repository (from a template,
 // if named), add it on the server over SSH, then give GitHub the server's read-only
 // deploy key and the signed webhook. Uses gh and ssh, as you already do; the webhook's
 // secret goes to GitHub on standard input, never in a command line.
 
-import { parseMemory } from "./memory.ts";
+import { areRedirects, MOST_REDIRECTS } from "./apps.ts";
+import { isMemory, parseMemory, sizeText } from "./memory.ts";
 import { isDomain, isName, isRepo } from "./names.ts";
-import { areRedirects, MOST_REDIRECTS } from "./products.ts";
 import { must, type Run } from "./run.ts";
 import type { Added } from "./server.ts";
 
@@ -17,7 +17,7 @@ export type Launch = {
   repo?: string | undefined;
   template?: string | undefined;
   visibility: "private" | "public";
-  /** The product's memory, such as 512M, 1G, or max (memory.ts); the server's default if not given. */
+  /** The app's memory, such as 512M, 1G, or max (memory.ts); the server's default if not given. */
   memory?: string | undefined;
 };
 
@@ -28,9 +28,9 @@ export const isServer = (value: unknown): value is string =>
 export async function launch(run: Run, options: Launch, log: (line: string) => void): Promise<void> {
   const { name, domain, server, redirects = [] } = options;
   if (!isName(name)) throw new Error("the name must be 2 to 29 lowercase letters, digits, and single hyphens, starting with a letter");
-  if (!isDomain(domain)) throw new Error("the domain must be a domain, such as shop.example.org");
+  if (!isDomain(domain)) throw new Error("the domain must be a domain, such as blog.example.org");
   if (!areRedirects(redirects, domain))
-    throw new Error(`the redirects must be up to ${MOST_REDIRECTS} domains, each once, other than the product's own, such as www.shop.example.org`);
+    throw new Error(`the redirects must be up to ${MOST_REDIRECTS} domains, each once, other than the app's own, such as www.blog.example.org`);
   if (!isServer(server)) throw new Error("the server must be a host from your SSH config, or user@host");
   if (options.template !== undefined && !isRepo(options.template)) throw new Error("the template must be a repository, as owner/name");
   if (options.memory !== undefined && parseMemory(options.memory) === null)
@@ -80,7 +80,7 @@ export async function launch(run: Run, options: Launch, log: (line: string) => v
     { env, timeout: 120_000 },
   );
   // The JSON is the last line: check's report comes before it. Each part is checked
-  // strictly: whatever the server says, only this product's webhook and one plain key
+  // strictly: whatever the server says, only this app's webhook and one plain key
   // can reach GitHub.
   const added = JSON.parse(answer.trim().split("\n").at(-1) ?? "{}") as Partial<Added>;
   const hook = typeof added.webhook === "string" && URL.canParse(added.webhook) ? new URL(added.webhook) : null;
@@ -103,7 +103,9 @@ export async function launch(run: Run, options: Launch, log: (line: string) => v
     throw new Error("the server's answer wasn't what modest-deploy add gives");
   }
   const webhook = hook.href;
-  log(`Added ${name} on ${server}.`);
+  // How much memory it was given: 512M, or less on a small server (said only if it's a size).
+  const memory = isMemory(added.memory) ? `, with ${sizeText(added.memory)} of memory` : "";
+  log(`Added ${name} on ${server}${memory}.`);
 
   // Run again, launch updates what's there rather than adding a second webhook or key.
   const keys = JSON.parse(await gh(["api", `repos/${repo}/keys?per_page=100`])) as { key?: string }[];
@@ -129,7 +131,7 @@ export async function launch(run: Run, options: Launch, log: (line: string) => v
 }
 
 /**
- * Every product on each of `servers`, from your computer: each server's own list, over
+ * Every app on each of `servers`, from your computer: each server's own list, over
  * SSH, in turn. One that doesn't answer is said, and the rest still listed. Gives how
  * many didn't answer.
  */
@@ -140,7 +142,7 @@ export async function listServers(run: Run, servers: string[], log: (line: strin
   for (const server of servers) {
     log(`== ${server}`);
     const ran = await run("ssh", ["-o", "BatchMode=yes", "--", server, "modest-deploy", "list"], { timeout: 60_000 });
-    if (ran.code === 0) log(ran.stdout.trimEnd() || "(no products)");
+    if (ran.code === 0) log(ran.stdout.trimEnd() || "(no apps)");
     else {
       failed++;
       log(`didn't answer: ${ran.stderr.trim().split("\n").at(-1) ?? `ssh exited ${ran.code}`}`);
@@ -149,7 +151,7 @@ export async function listServers(run: Run, servers: string[], log: (line: strin
   return failed;
 }
 
-/** What launch does, as steps to do by hand, with this product's own details. Every value has been checked. */
+/** What launch does, as steps to do by hand, with this app's own details. Every value has been checked. */
 function byHand({ name, domain, server, redirects = [], repo, memory }: Launch): string[] {
   const where = repo ?? `your-username/${name}`;
   const add = [
@@ -159,7 +161,7 @@ function byHand({ name, domain, server, redirects = [], repo, memory }: Launch):
   ].join(" ");
   return [
     `  1. On GitHub, make the repository ${where}, if it isn't there.`,
-    "  2. Add the product on the server, which prints a deploy key, and a webhook with its secret:",
+    "  2. Add the app on the server, which prints a deploy key, and a webhook with its secret:",
     `       ${add}`,
     `  3. In ${where}'s settings on GitHub: add the deploy key (Deploy keys, read-only), and the webhook`,
     `     (Webhooks: its address, content type application/json, the secret, and only the "Workflow runs" event).`,

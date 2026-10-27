@@ -1,7 +1,7 @@
 // Deploy requests: the only thing the listener can do is leave one here, a file named
-// for a product, holding the commit to deploy (or "tip", for whatever is on main).
+// for an app, holding the commit to deploy (or "tip", for whatever is on main).
 // systemd starts the deploy service whenever the folder isn't empty, and it takes
-// them. A newer request for a product replaces an older one still waiting.
+// them. A newer request for an app replaces an older one still waiting.
 
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
@@ -39,7 +39,7 @@ async function readSmall(path: string): Promise<string> {
 
 /**
  * Takes one waiting request, or null if none is waiting. It's moved aside before
- * it's read, so a newer request for the same product, arriving meanwhile, is kept
+ * it's read, so a newer request for the same app, arriving meanwhile, is kept
  * for next time rather than lost. Anything that isn't a request is thrown away.
  */
 export async function takeOne(paths: Layout): Promise<Request | null> {

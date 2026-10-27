@@ -3,7 +3,7 @@
 
 import { readdir, readFile } from "node:fs/promises";
 import { basename, dirname } from "node:path";
-import { type Machine, shares, sizeText } from "./memory.ts";
+import { LEAST_FOR_APPS, type Machine, shares, sizeText, tooSmall } from "./memory.ts";
 import type { Run } from "./run.ts";
 
 export type Finding = { ok: boolean; what: string; fix: string };
@@ -85,14 +85,14 @@ async function matchAllowances(read: (path: string) => Promise<string>, path = "
 }
 
 /**
- * Checks the server is set up safely. Given its products and its size, also that their
+ * Checks the server is set up safely. Given its apps and its size, also that their
  * memory fits in what the server has for them (memory.ts).
  */
 export async function checkServer(
   run: Run,
   read = (path: string) => readFile(path, "utf8"),
   cli?: string,
-  fleet?: { products: { name: string; memory: number }[]; machine: Machine },
+  fleet?: { apps: { name: string; memory: number }[]; machine: Machine },
 ): Promise<Finding[]> {
   const findings: Finding[] = [];
   const add = (ok: boolean, what: string, fix: string) => findings.push({ ok, what, fix });
@@ -197,12 +197,13 @@ export async function checkServer(
   );
 
   if (fleet) {
-    const given = fleet.products.reduce((sum, p) => sum + p.memory, 0);
-    const room = shares(fleet.machine).products;
+    add(shares(fleet.machine).apps >= LEAST_FOR_APPS, "memory enough to run an app", tooSmall(fleet.machine));
+    const given = fleet.apps.reduce((sum, p) => sum + p.memory, 0);
+    const room = shares(fleet.machine).apps;
     add(
       given <= room,
-      "products' memory fits this server",
-      `${sizeText(given)} given to products, which have ${sizeText(room)} here: give some less (modest-deploy resize <name> --memory <size>), remove one, or use a bigger server`,
+      "apps' memory fits this server",
+      `${sizeText(given)} given to apps, which have ${sizeText(room)} here: give some less (modest-deploy resize <name> --memory <size>), remove one, or use a bigger server`,
     );
   }
 

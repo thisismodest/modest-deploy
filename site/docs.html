@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'" />
     <meta name="referrer" content="no-referrer" />
-    <title>Docs: modest-deploy, deploy Node products to your own server</title>
-    <meta name="description" content="How to set up a server for modest-deploy, launch products on it, and what happens on every push." />
+    <title>Docs: modest-deploy, deploy Node apps to your own server</title>
+    <meta name="description" content="How to set up a server for modest-deploy, launch apps on it, and what happens on every push." />
     <link rel="canonical" href="https://modest-deploy.com/docs.html" />
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
@@ -15,12 +15,12 @@
     <meta property="og:site_name" content="modest-deploy" />
     <meta property="og:locale" content="en_GB" />
     <meta property="og:url" content="https://modest-deploy.com/docs.html" />
-    <meta property="og:title" content="Docs: modest-deploy, deploy Node products to your own server" />
-    <meta property="og:description" content="How to set up a server for modest-deploy, launch products on it, and what happens on every push." />
+    <meta property="og:title" content="Docs: modest-deploy, deploy Node apps to your own server" />
+    <meta property="og:description" content="How to set up a server for modest-deploy, launch apps on it, and what happens on every push." />
     <meta property="og:image" content="https://modest-deploy.com/assets/og.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="modest-deploy: Deploy Node products to your own server. No dependencies. Beside it, a product being launched with one command." />
+    <meta property="og:image:alt" content="modest-deploy: Deploy Node apps to your own server. No dependencies. Beside it, an app being launched with one command." />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="stylesheet" href="assets/vendor/modest-ui.min.css" />
     <link rel="stylesheet" href="assets/site.css" />
@@ -46,7 +46,7 @@
       <div class="wrap">
         <p class="eyebrow">Docs</p>
         <h1>Using modest-deploy</h1>
-        <p class="lead">Set a server up once, then launch products with one command, and deploy them on every push.</p>
+        <p class="lead">Set a server up once, then launch apps with one command, and deploy them on every push.</p>
       </div>
     </header>
 
@@ -56,8 +56,8 @@
         <ol>
             <li><a href="#before">Before you install</a></li>
             <li><a href="#install">Install</a></li>
-            <li><a href="#launch">Launch a product</a></li>
-            <li><a href="#product">What a product does</a></li>
+            <li><a href="#launch">Launch an app</a></li>
+            <li><a href="#app">What an app does</a></li>
             <li><a href="#deploy">Every push</a></li>
             <li><a href="#commands">Commands</a></li>
             <li><a href="#update">Updating</a></li>
@@ -72,7 +72,7 @@
           <h2 id="before">Before you install</h2>
           <p>
             modest-deploy doesn't set up the server. You do that once, and <code>modest-deploy check</code>
-            checks it. <a href="start.html">Step by step</a> goes through it in detail. On a new Ubuntu 26.04 LTS server you need the list below. 24.04 LTS also works, but it can't stop a compromised product from opening other ports (<a href="security.html#ubuntu-24">why</a>).
+            checks it. <a href="start.html">Step by step</a> goes through it in detail. On a new Ubuntu 26.04 LTS server you need the list below. 24.04 LTS also works, but it can't stop a compromised app from opening other ports (<a href="security.html#ubuntu-24">why</a>).
           </p>
           <ul class="checks">
             <li><strong>Sign in with an SSH key,</strong> added when you make the server, as your own user with <code>sudo</code>. Turn off signing in by password, and as root.</li>
@@ -105,11 +105,11 @@
         </section>
 
         <section aria-labelledby="launch">
-          <h2 id="launch">Launch a product</h2>
+          <h2 id="launch">Launch an app</h2>
           <p>From your computer, with <code>gh</code> signed in and SSH access to the server:</p>
           <div class="window terminal">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
-            <pre><code><span class="c">$</span> modest-deploy launch shop shop.example.org --server myserver --template example/template</code></pre>
+            <pre><code><span class="c">$</span> modest-deploy launch blog blog.example.org --server myserver --template example/template</code></pre>
           </div>
           <ol>
             <li><strong>Makes the repository</strong> on GitHub (private, unless you add <code>--public</code>), from your template if you name one. If it's there already, it's used as it is: only the key and webhook below are added.</li>
@@ -117,27 +117,27 @@
             <li><strong>Connects them:</strong> gives GitHub the server's read-only deploy key, and a webhook for the "Workflow runs" event, signed with a secret made for this product.</li>
             <li><strong>Tells you what's left:</strong> point the domain's DNS at the server, and push.</li>
           </ol>
-          <p>Without <code>gh</code>, or signed out of it, launch changes nothing: it says how to get it, and prints the same steps to do by hand, with your product's own <code>modest-deploy add</code> command for the server, which prints what to add on GitHub.</p>
+          <p>Without <code>gh</code>, or signed out of it, launch changes nothing: it says how to get it, and prints the same steps to do by hand, with your app's own <code>modest-deploy add</code> command for the server, which prints what to add on GitHub.</p>
           <p>
-            Add <code>--redirect www.shop.example.org</code> (or several, separated by commas) for domains that send visitors to the
-            product's own, at the same path. They never reach the product, and no domain can be used by two products. Run
+            Add <code>--redirect www.blog.example.org</code> (or several, separated by commas) for domains that send visitors to the
+            app's own, at the same path. They never reach the app, and no domain can be used by two apps. Run
             <code>add</code> again on the server to change them.
           </p>
-          <p>Each product is given memory of its own: 512M, or what you give with <code>--memory</code> (see <a href="#memory">Memory</a>).</p>
+          <p>Each app is given memory of its own: 512M (or all that's left, if less), or what you give with <code>--memory</code> (see <a href="#memory">Memory</a>).</p>
         </section>
 
         <section aria-labelledby="memory">
           <h2 id="memory">Memory</h2>
           <p>
-            Each product's memory is set aside for it alone, and is also its ceiling. The server keeps a quarter of its memory for
-            itself (never under 384M), for the system, SSH, Caddy, the listener, and deploys; products share the rest, and one is
-            added only if it fits. So however busy products get, together they can't run the server out of memory, and one
-            can't take another's. A product that goes over its own is restarted, and nothing else is touched.
+            Each app's memory is set aside for it alone, and is also its ceiling. The server keeps a quarter of its memory for
+            itself (never under 384M), for the system, SSH, Caddy, the listener, and deploys; apps share the rest, and one is
+            added only if it fits. So however busy apps get, together they can't run the server out of memory, and one
+            can't take another's. An app that goes over its own is restarted, and nothing else is touched.
           </p>
           <p>A server has a little less memory than its size (the kernel keeps some), so these are close, not exact. <code>list</code> gives the real figures.</p>
           <div class="table-card">
             <table>
-              <thead><tr><th scope="col">Server</th><th scope="col">Kept for the server</th><th scope="col">For products</th><th scope="col">For example</th></tr></thead>
+              <thead><tr><th scope="col">Server</th><th scope="col">Kept for the server</th><th scope="col">For apps</th><th scope="col">For example</th></tr></thead>
               <tbody>
                 <tr><td>1GB</td><td>384M (deploys use up to 192M of it)</td><td>576M</td><td>One at 512M, or two at 256M</td></tr>
                 <tr><td>2GB</td><td>About 490M</td><td>About 1.4G</td><td>Two at 512M and one at 256M</td></tr>
@@ -149,28 +149,28 @@
           <div class="window terminal">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
             <pre><code><span class="c">$</span> modest-deploy launch club club.example.org --server clubserver --memory max
-<span class="c">$</span> sudo modest-deploy resize shop --memory 1G
+<span class="c">$</span> sudo modest-deploy resize blog --memory 1G
 <span class="c">$</span> modest-deploy list --server shopserver,clubserver</code></pre>
           </div>
           <p>
             Sizes are whole megabytes or gigabytes (<code>768M</code>, <code>2G</code>), at least <code>128M</code>, or
-            <code>max</code> for all that's left. <code>list</code> shows each product's memory and what's given out, and
-            <code>check</code> says if products have more than the server has for them (after moving to a smaller server, say).
+            <code>max</code> for all that's left. <code>list</code> shows each app's memory and what's given out, and
+            <code>check</code> says if apps have more than the server has for them (after moving to a smaller server, say).
             After giving the server more memory or cores, run <code>install</code> again: it sizes everything to the server.
           </p>
           <p>
-            Each product's Node thread pool is sized to the server's cores (the cores and two, at most 18). That's what lets
+            Each app's Node thread pool is sized to the server's cores (the cores and two, at most 18). That's what lets
             <a href="https://modest-auth.com">modest-auth</a> check a password on each core: on a server with more cores, more
             people can sign in at once.
           </p>
           <p>
-            Small products can share a server. Anything with personal data, money, or real traffic is better on a server of its
+            Small apps can share a server. Anything with personal data, money, or real traffic is better on a server of its
             own: <code>list --server</code> shows them all, from your computer.
           </p>
         </section>
 
-        <section aria-labelledby="product">
-          <h2 id="product">What a product does</h2>
+        <section aria-labelledby="app">
+          <h2 id="app">What an app does</h2>
           <ul class="checks">
             <li><strong>Starts with <code>node server.js</code>,</strong> and listens on <code>process.env.PORT</code>, at <code>process.env.HOST</code> (127.0.0.1). A version listening anywhere else isn't deployed, so nothing reaches it but through Caddy.</li>
             <li><strong>Keeps what it writes in <code>process.env.DATA_DIR</code>.</strong> Everything else is read-only to it.</li>
@@ -190,12 +190,12 @@
           <h2 id="deploy">Every push</h2>
           <p>When CI passes on <code>main</code>, GitHub sends a signed message to the deploy domain. The server:</p>
           <ol>
-            <li>ignores anything unsigned, or not a successful run of CI for a push to <code>main</code> in the product's own repository;</li>
-            <li>fetches the repository with the product's own read-only key, and checks GitHub's host key against the ones GitHub publishes;</li>
+            <li>ignores anything unsigned, or not a successful run of CI for a push to <code>main</code> in the app's own repository;</li>
+            <li>fetches the repository with the app's own read-only key, and checks GitHub's host key against the ones GitHub publishes;</li>
             <li>deploys only if the commit is still the newest on <code>main</code>, so an old message sent again can't roll it back;</li>
             <li>refuses a release over 1GB or 200,000 files, or one the disk hasn't room for (it always keeps 1GB free);</li>
-            <li>builds the release as a separate user, with dependencies exactly as the lockfile says and install scripts off, then makes it owned by root and readable only by the product;</li>
-            <li>switches to it, restarts the product, and checks it answers within a minute, and only on 127.0.0.1; if not, the version before comes back.</li>
+            <li>builds the release as a separate user, with dependencies exactly as the lockfile says and install scripts off, then makes it owned by root and readable only by the app;</li>
+            <li>switches to it, restarts the app, and checks it answers within a minute, and only on 127.0.0.1; if not, the version before comes back.</li>
           </ol>
           <p>The last three releases are kept. To deploy again by hand: <code>sudo modest-deploy deploy &lt;name&gt;</code>.</p>
         </section>
@@ -209,15 +209,15 @@
                 <tr><td><code>check</code></td><td>Server</td><td>Checks the server is set up safely, and says what to fix</td></tr>
                 <tr><td><code>install --domain &lt;d&gt;</code></td><td>Server</td><td>Installs modest-deploy's own parts, once</td></tr>
                 <tr><td><code>help [&lt;command&gt;]</code></td><td>Either</td><td>How to get started, or one command's page: what it does, its options, and an example (also <code>-h</code>, <code>--help</code>)</td></tr>
-                <tr><td><code>launch &lt;name&gt; &lt;domain&gt; --server &lt;s&gt;</code></td><td>Your computer</td><td>Makes the repository, adds the product, and connects them</td></tr>
-                <tr><td><code>add &lt;name&gt; --domain &lt;d&gt; --repo &lt;o/r&gt; [--redirect &lt;d,...&gt;]</code></td><td>Server</td><td>Adds a product (launch does this for you); again to change its redirects</td></tr>
-                <tr><td><code>list [--server &lt;s,...&gt;]</code></td><td>Either</td><td>The products, their memory, and what each is running; from your computer, every server's</td></tr>
+                <tr><td><code>launch &lt;name&gt; &lt;domain&gt; --server &lt;s&gt;</code></td><td>Your computer</td><td>Makes the repository, adds the app, and connects them</td></tr>
+                <tr><td><code>add &lt;name&gt; --domain &lt;d&gt; --repo &lt;o/r&gt; [--redirect &lt;d,...&gt;]</code></td><td>Server</td><td>Adds an app (launch does this for you); again to change its redirects</td></tr>
+                <tr><td><code>list [--server &lt;s,...&gt;]</code></td><td>Either</td><td>The apps, their memory, and what each is running; from your computer, every server's</td></tr>
                 <tr><td><code>deploy &lt;name&gt;</code></td><td>Server</td><td>Deploys main's newest commit now, whether or not its CI passed</td></tr>
-                <tr><td><code>restart &lt;name&gt;</code></td><td>Server</td><td>Restarts a product, after changing its keys</td></tr>
-                <tr><td><code>resize &lt;name&gt; --memory &lt;size&gt;</code></td><td>Server</td><td>Gives a product more memory, or less, if it fits</td></tr>
-                <tr><td><code>logs &lt;name&gt;</code></td><td>Server</td><td>A product's latest log lines</td></tr>
-                <tr><td><code>backup</code></td><td>Server</td><td>Copies every product's databases now (it runs nightly anyway)</td></tr>
-                <tr><td><code>remove &lt;name&gt;</code></td><td>Server</td><td>Takes a product off; its data, copies, and keys file stay</td></tr>
+                <tr><td><code>restart &lt;name&gt;</code></td><td>Server</td><td>Restarts an app, after changing its keys</td></tr>
+                <tr><td><code>resize &lt;name&gt; --memory &lt;size&gt;</code></td><td>Server</td><td>Gives an app more memory, or less, if it fits</td></tr>
+                <tr><td><code>logs &lt;name&gt;</code></td><td>Server</td><td>An app's latest log lines</td></tr>
+                <tr><td><code>backup</code></td><td>Server</td><td>Copies every app's databases now (it runs nightly anyway)</td></tr>
+                <tr><td><code>remove &lt;name&gt;</code></td><td>Server</td><td>Takes an app off; its data, copies, and keys file stay</td></tr>
               </tbody>
             </table>
           </div>
@@ -231,18 +231,18 @@
             <pre><code><span class="c">$</span> sudo npm install -g modest-deploy@latest
 <span class="c">$</span> sudo modest-deploy install</code></pre>
           </div>
-          <p>From a clone, <code>sudo git -C /opt/modest-deploy pull</code> instead of the first line. Running <code>install</code> again rewrites every unit it made, the products' included, so they use the new version, and restarts those whose unit changed.</p>
+          <p>From a clone, <code>sudo git -C /opt/modest-deploy pull</code> instead of the first line. Running <code>install</code> again rewrites every unit it made, the apps' included, so they use the new version, and restarts those whose unit changed.</p>
         </section>
 
         <section aria-labelledby="restore">
           <h2 id="restore">Restoring a backup</h2>
-          <p>Stop the product, put the copy back as the product's own, remove SQLite's <code>-wal</code> and <code>-shm</code> files (they belong to the database being replaced), and start it:</p>
+          <p>Stop the app, put the copy back as the app's own, remove SQLite's <code>-wal</code> and <code>-shm</code> files (they belong to the database being replaced), and start it:</p>
           <div class="window terminal">
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
-            <pre><code><span class="c">$</span> sudo systemctl stop modest-deploy-shop
-<span class="c">$</span> sudo install -o mh-shop -g mh-shop -m 600 /var/backups/modest-deploy/shop/2026-10-25/app.db /var/lib/modest-deploy/shop/app.db
-<span class="c">$</span> sudo rm -f /var/lib/modest-deploy/shop/app.db-wal /var/lib/modest-deploy/shop/app.db-shm
-<span class="c">$</span> sudo systemctl start modest-deploy-shop</code></pre>
+            <pre><code><span class="c">$</span> sudo systemctl stop modest-deploy-blog
+<span class="c">$</span> sudo install -o md-blog -g md-blog -m 600 /var/backups/modest-deploy/blog/2026-10-25/app.db /var/lib/modest-deploy/blog/app.db
+<span class="c">$</span> sudo rm -f /var/lib/modest-deploy/blog/app.db-wal /var/lib/modest-deploy/blog/app.db-shm
+<span class="c">$</span> sudo systemctl start modest-deploy-blog</code></pre>
           </div>
         </section>
 
@@ -252,8 +252,8 @@
             <table>
               <thead><tr><th scope="col">What</th><th scope="col">Where</th></tr></thead>
               <tbody>
-                <tr><td>Each product's settings</td><td><code>/etc/modest-deploy/products/</code></td></tr>
-                <tr><td>Each product's keys (its environment)</td><td><code>/etc/modest-deploy/env/</code></td></tr>
+                <tr><td>Each app's settings</td><td><code>/etc/modest-deploy/apps/</code></td></tr>
+                <tr><td>Each app's keys (its environment)</td><td><code>/etc/modest-deploy/env/</code></td></tr>
                 <tr><td>Its code: the releases, and the one running</td><td><code>/srv/modest-deploy/&lt;name&gt;/</code></td></tr>
                 <tr><td>Its data</td><td><code>/var/lib/modest-deploy/&lt;name&gt;/</code></td></tr>
                 <tr><td>Nightly copies of its databases (7 nights)</td><td><code>/var/backups/modest-deploy/&lt;name&gt;/</code></td></tr>
@@ -269,9 +269,9 @@
           <h2 id="not">What it doesn't do</h2>
           <ul class="checks not">
             <li><strong>Set the server up,</strong> as above.</li>
-            <li><strong>Run products that need more than Node,</strong> such as a browser. Those are better in a container of their own.</li>
+            <li><strong>Run apps that need more than Node,</strong> such as a browser. Those are better in a container of their own.</li>
             <li><strong>DNS, email, or payments.</strong> Those stay with your providers.</li>
-            <li><strong>Run across several servers.</strong> A product that outgrows a shared one moves to a server of its own, set up the same way.</li>
+            <li><strong>Run across several servers.</strong> An app that outgrows a shared one moves to a server of its own, set up the same way.</li>
           </ul>
         </section>
       </main>

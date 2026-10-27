@@ -1,6 +1,6 @@
-// A product for the end-to-end test. It answers with its version, keeps accounts with
+// An app for the end-to-end test. It answers with its version, keeps accounts with
 // modest-auth (from npm, so a dependency is installed), and at /probe, tries what a
-// product that's been broken into would try, reporting what it was allowed to do.
+// app that's been broken into would try, reporting what it was allowed to do.
 
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer as http } from "node:http";
@@ -36,8 +36,8 @@ async function probe(other) {
     "read /etc/shadow": tried(() => readFileSync("/etc/shadow")),
     "change its own code": tried(() => writeFileSync(`/srv/modest-deploy/${self}/current/server.js`, "x")),
     "write to /etc": tried(() => writeFileSync("/etc/evil", "x")),
-    "read another product's data": tried(() => readFileSync(`/var/lib/modest-deploy/${other}/app.db`)),
-    "read another product's code": tried(() => readFileSync(`/srv/modest-deploy/${other}/current/server.js`)),
+    "read another app's data": tried(() => readFileSync(`/var/lib/modest-deploy/${other}/app.db`)),
+    "read another app's code": tried(() => readFileSync(`/srv/modest-deploy/${other}/current/server.js`)),
     "read the backups": tried(() => readdirSync("/var/backups/modest-deploy")),
     "listen on another port": bound,
     "see other users' processes": readdirSync("/proc").filter((p) => /^\d+$/.test(p)).length > 3 ? "allowed" : "refused",

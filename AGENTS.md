@@ -1,6 +1,6 @@
 # modest-deploy: agent guide
 
-Deploy small Node products to your own server: launch each with a command, deploy on every
+Deploy small Node apps to your own server: launch each with a command, deploy on every
 push that passes CI. No dependencies. Read README.md for what it promises, and
 docs/threat-model.md for how.
 
@@ -32,11 +32,11 @@ docs/threat-model.md for how.
 | Deploy requests, from the listener to the deploy service | `src/queue.ts` |
 | Deploying: fetch, build, switch, check, go back | `src/deploy.ts` |
 | install, add, remove, list, resize, and backup | `src/server.ts` |
-| Each product's memory, and the server's own share | `src/memory.ts` |
+| Each app's memory, and the server's own share | `src/memory.ts` |
 | The server's checks | `src/check.ts` |
 | launch, and list --server, from your computer | `src/launch.ts` |
 | The systemd units and Caddy sites it writes | `src/units.ts` |
-| Each product's settings | `src/products.ts` |
+| Each app's settings | `src/apps.ts` |
 | Where everything lives, and the users | `src/paths.ts` |
 | Running programs (execFile, never a shell) | `src/run.ts` |
 | Names, domains, repositories, and commits: the patterns they must match | `src/names.ts` |

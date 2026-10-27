@@ -10,7 +10,7 @@ below.
 
 Open an issue first for anything beyond a small fix, and say:
 
-- **what it's for:** the problem, for a real product or server;
+- **what it's for:** the problem, for a real app or server;
 - **the smallest version** that solves it;
 - **what it changes in [the threat model](docs/threat-model.md):** what new could go
   wrong, and what would stop it.

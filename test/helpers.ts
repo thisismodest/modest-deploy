@@ -1,15 +1,15 @@
-// Shared by the tests: a temporary server layout, a product in it, and signed messages.
+// Shared by the tests: a temporary server layout, an app in it, and signed messages.
 
 import { createHmac } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { type App, saveApp, writeWhole } from "../src/apps.ts";
 import { type Layout, layout } from "../src/paths.ts";
-import { type Product, saveProduct, writeWhole } from "../src/products.ts";
 
 export const SECRET = "a".repeat(64);
 export const COMMIT = "0123456789abcdef0123456789abcdef01234567";
-export const PRODUCT: Product = {
+export const APP: App = {
   name: "shop",
   domain: "shop.example.org",
   redirects: [],
@@ -30,9 +30,9 @@ export async function onServer(run: (paths: Layout) => Promise<void>): Promise<v
   }
 }
 
-export async function withProduct(paths: Layout, product = PRODUCT, secret = SECRET): Promise<void> {
-  await saveProduct(paths, product);
-  await writeWhole(paths.secret(product.name), secret, 0o640);
+export async function withApp(paths: Layout, app = APP, secret = SECRET): Promise<void> {
+  await saveApp(paths, app);
+  await writeWhole(paths.secret(app.name), secret, 0o640);
 }
 
 export const sign = (body: string, secret = SECRET) => `sha256=${createHmac("sha256", secret).update(body).digest("hex")}`;

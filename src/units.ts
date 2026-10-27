@@ -1,10 +1,10 @@
 // The files modest-deploy writes for systemd and Caddy, as text. Every value in them has
 // already been checked (names.ts), so none can add a line or a directive of its own.
 
+import { type App, areRedirects } from "./apps.ts";
 import { isMemory, type Machine, shares, threadPoolFor } from "./memory.ts";
 import { isDomain, isName, isPort } from "./names.ts";
-import { type Layout, LISTENER_PORT, LISTENER_USER, productUser } from "./paths.ts";
-import { areRedirects, type Product } from "./products.ts";
+import { appUser, type Layout, LISTENER_PORT, LISTENER_USER } from "./paths.ts";
 
 /** What systemd takes away from every service modest-deploy runs: whatever a Node server doesn't need. */
 const SANDBOX = `NoNewPrivileges=yes
@@ -33,32 +33,26 @@ SystemCallFilter=~@privileged
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 UMask=0077`;
 
-const safe = (product: Product) => {
-  if (
-    !isName(product.name) ||
-    !isDomain(product.domain) ||
-    !areRedirects(product.redirects, product.domain) ||
-    !isPort(product.port) ||
-    !isMemory(product.memory)
-  )
-    throw new Error("not a product");
-  return product;
+const safe = (app: App) => {
+  if (!isName(app.name) || !isDomain(app.domain) || !areRedirects(app.redirects, app.domain) || !isPort(app.port) || !isMemory(app.memory))
+    throw new Error("not an app");
+  return app;
 };
 
 /**
- * A product: its own user, its own data folder, only its own port, and nothing of the
+ * An app: its own user, its own data folder, only its own port, and nothing of the
  * server's. Its memory is set aside for it (MemoryLow: the system leaves it be) and is
  * its ceiling (MemoryMax); its thread pool fits the machine's cores (memory.ts).
  */
-export function productService(paths: Layout, product: Product, node: string, machine: Machine): string {
-  const { name, domain, port, memory } = safe(product);
-  const user = productUser(name);
+export function appService(paths: Layout, app: App, node: string, machine: Machine): string {
+  const { name, domain, port, memory } = safe(app);
+  const user = appUser(name);
   return `# Written by modest-deploy: changes here are replaced.
 [Unit]
 Description=modest-deploy: ${name} (${domain})
 After=network-online.target
 Wants=network-online.target
-# A product that keeps failing is restarted more and more slowly, but never given up on.
+# An app that keeps failing is restarted more and more slowly, but never given up on.
 StartLimitIntervalSec=0
 
 [Service]
@@ -82,7 +76,7 @@ RestartMaxDelaySec=60
 ${SANDBOX}
 SocketBindAllow=tcp:${port}
 SocketBindDeny=any
-InaccessiblePaths=-${paths.products} -${paths.secrets} -${paths.keys} -${paths.envs} -/var/backups/modest-deploy -/var/spool/modest-deploy
+InaccessiblePaths=-${paths.apps} -${paths.secrets} -${paths.keys} -${paths.envs} -/var/backups/modest-deploy -/var/spool/modest-deploy
 MemoryMax=${memory}M
 MemoryLow=${memory}M
 TasksMax=256
@@ -93,7 +87,7 @@ WantedBy=multi-user.target
 `;
 }
 
-/** The listener: reads products' settings and secrets, writes deploy requests, and nothing else. */
+/** The listener: reads apps' settings and secrets, writes deploy requests, and nothing else. */
 export function listenerService(paths: Layout, node: string, cli: string): string {
   return `# Written by modest-deploy: changes here are replaced.
 [Unit]
@@ -122,7 +116,7 @@ WantedBy=multi-user.target
 `;
 }
 
-/** The deploy service: started by systemd whenever a request is waiting, as root (it has to own and restart products). */
+/** The deploy service: started by systemd whenever a request is waiting, as root (it has to own and restart apps). */
 export function deployService(node: string, cli: string, machine: Machine): string {
   return `# Written by modest-deploy: changes here are replaced.
 [Unit]
@@ -136,7 +130,7 @@ ExecStart=${node} ${cli} work
 # Each step has its own time limit (git and npm 10 minutes, the check a minute), so the whole has none:
 # a deploy is never cut off between switching and checking.
 TimeoutStartSec=infinity
-# Its share of what the server keeps for itself (memory.ts): a build never takes a product's.
+# Its share of what the server keeps for itself (memory.ts): a build never takes an app's.
 MemoryMax=${shares(machine).deploy}M
 PrivateDevices=yes
 ProtectSystem=full
@@ -166,7 +160,7 @@ WantedBy=paths.target
 export function backupService(node: string, cli: string): string {
   return `# Written by modest-deploy: changes here are replaced.
 [Unit]
-Description=modest-deploy: copy every product's databases
+Description=modest-deploy: copy every app's databases
 
 [Service]
 Type=oneshot
@@ -180,7 +174,7 @@ ProtectHome=yes
 
 export const BACKUP_TIMER = `# Written by modest-deploy: changes here are replaced.
 [Unit]
-Description=modest-deploy: copy every product's databases, nightly
+Description=modest-deploy: copy every app's databases, nightly
 
 [Timer]
 OnCalendar=*-*-* 03:15
@@ -192,12 +186,12 @@ WantedBy=timers.target
 `;
 
 /**
- * A product's site: HTTPS for its domain (Caddy gets the certificate), passed to its port.
+ * An app's site: HTTPS for its domain (Caddy gets the certificate), passed to its port.
  * Each redirect goes to the same path on that domain, which it names itself, so a request
- * can't choose where it's sent; and never reaches the product.
+ * can't choose where it's sent; and never reaches the app.
  */
-export function productSite(product: Product): string {
-  const { domain, redirects, port } = safe(product);
+export function appSite(app: App): string {
+  const { domain, redirects, port } = safe(app);
   const redirect = (from: string) => `\n${from} {\n\tredir https://${domain}{uri} permanent\n}\n`;
   return `# Written by modest-deploy: changes here are replaced.
 ${domain} {
@@ -206,7 +200,7 @@ ${domain} {
 ${redirects.map(redirect).join("")}`;
 }
 
-/** The deploy domain: only /deploy/<product> reaches the listener, and only small bodies. */
+/** The deploy domain: only /deploy/<app> reaches the listener, and only small bodies. */
 export function hostSite(domain: string): string {
   if (!isDomain(domain)) throw new Error("not a domain");
   return `# Written by modest-deploy: changes here are replaced.

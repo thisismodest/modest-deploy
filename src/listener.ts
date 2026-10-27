@@ -1,14 +1,14 @@
 // The deploy listener: a small HTTP server, behind Caddy, for GitHub's webhook
-// messages, at POST /deploy/<product>. It checks each message, and for one that
+// messages, at POST /deploy/<app>. It checks each message, and for one that
 // should deploy, leaves a request for the deploy service. It runs nothing itself,
-// and nothing a message says reaches a command: only a known product's name, and a
+// and nothing a message says reaches a command: only a known app's name, and a
 // commit checked to be 40 hex characters.
 
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { readApp } from "./apps.ts";
 import { isName } from "./names.ts";
 import type { Layout } from "./paths.ts";
-import { readProduct } from "./products.ts";
 import { enqueue } from "./queue.ts";
 import { decide, signatureValid } from "./webhook.ts";
 
@@ -52,12 +52,12 @@ async function handle(paths: Layout, seen: Set<string>, req: IncomingMessage, re
     res.setHeader("connection", "close");
     return answer(res, 413, "Too large");
   }
-  // A product that doesn't exist gets the same answer as a wrong signature, so the answer doesn't say which exist.
-  const product = await readProduct(paths, name).catch(() => null);
-  const secret = product ? (await readFile(paths.secret(name), "utf8").catch(() => "")).trim() : "";
+  // An app that doesn't exist gets the same answer as a wrong signature, so the answer doesn't say which exist.
+  const app = await readApp(paths, name).catch(() => null);
+  const secret = app ? (await readFile(paths.secret(name), "utf8").catch(() => "")).trim() : "";
   const signature = req.headers["x-hub-signature-256"];
-  if (!product || !signatureValid(body, typeof signature === "string" ? signature : undefined, secret)) {
-    return answer(res, 401, "Not signed with this product's secret");
+  if (!app || !signatureValid(body, typeof signature === "string" ? signature : undefined, secret)) {
+    return answer(res, 401, "Not signed with this app's secret");
   }
   // Each delivery is acted on once when GitHub sends it again. (The id isn't signed, so this
   // isn't a defence: that's that only main's newest commit is ever deployed, and a failed one
@@ -77,7 +77,7 @@ async function handle(paths: Layout, seen: Set<string>, req: IncomingMessage, re
     if (seen.size > REMEMBERED) seen.delete(seen.values().next().value ?? "");
   };
   const event = req.headers["x-github-event"];
-  const decision = decide(typeof event === "string" ? event : undefined, payload, product);
+  const decision = decide(typeof event === "string" ? event : undefined, payload, app);
   if ("ignore" in decision) {
     remember();
     return answer(res, 202, `Ignored: ${decision.ignore}`);

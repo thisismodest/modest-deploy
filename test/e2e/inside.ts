@@ -1,5 +1,5 @@
 // The end-to-end test, run as root inside a fresh Ubuntu server with systemd (see
-// run.sh). It does what a person would: check, install, add two products, and deploy
+// run.sh). It does what a person would: check, install, add two apps, and deploy
 // them through signed webhook messages; then checks every promise on the real system.
 
 import assert from "node:assert/strict";
@@ -23,8 +23,8 @@ const mh = (...args: string[]) => sh("modest-deploy", args);
 const secrets: Record<string, string> = {};
 const commits: Record<string, string[]> = { shop: [], blog: [] };
 
-/** Commits a version of a product to the stand-in GitHub, returning its commit. */
-function commit(name: string, version: string, server = readFileSync("/e2e/product.js", "utf8").replace("__VERSION__", version)): string {
+/** Commits a version of an app to the stand-in GitHub, returning its commit. */
+function commit(name: string, version: string, server = readFileSync("/e2e/app.js", "utf8").replace("__VERSION__", version)): string {
   const work = `/root/work/${name}`;
   writeFileSync(`${work}/server.js`, server);
   sh("git", ["add", "-A"], { cwd: work });
@@ -84,7 +84,7 @@ for (const unit of ["modest-deploy-listener.service", "modest-deploy-deploy.path
 }
 ok("the listener, the deploy path, and the backup timer are running");
 
-step("add two products");
+step("add two apps");
 const added: Record<string, { port?: number; deployKey: string; secret: string; webhook: string }> = {};
 for (const name of ["shop", "blog"]) {
   const out = mh("add", name, "--domain", `${name}.example.org`, "--repo", `example/${name}`, "--json").trim().split("\n").at(-1) ?? "";
@@ -93,8 +93,8 @@ for (const name of ["shop", "blog"]) {
 }
 assert.equal(added.shop?.webhook, "https://deploy.example.org/deploy/shop");
 const ports = {
-  shop: JSON.parse(readFileSync("/etc/modest-deploy/products/shop.json", "utf8")).port,
-  blog: JSON.parse(readFileSync("/etc/modest-deploy/products/blog.json", "utf8")).port,
+  shop: JSON.parse(readFileSync("/etc/modest-deploy/apps/shop.json", "utf8")).port,
+  blog: JSON.parse(readFileSync("/etc/modest-deploy/apps/blog.json", "utf8")).port,
 };
 ok(`added, on ports ${ports.shop} and ${ports.blog}`);
 
@@ -163,14 +163,14 @@ const viaDeploy = sh("curl", [
   "https://deploy.example.org/deploy/shop",
 ]);
 assert.equal(viaDeploy, "401");
-ok("the product answers on its domain; the deploy domain only passes /deploy/ on, and refuses an unsigned message");
+ok("the app answers on its domain; the deploy domain only passes /deploy/ on, and refuses an unsigned message");
 
 step("an unsigned or wrongly signed message is refused, and leaves nothing");
 assert.equal((await webhook("shop", v1, "wrong")).status, 401);
 assert.equal(readdirSync("/var/spool/modest-deploy/requests").length, 0);
 ok("refused");
 
-step("each product is sandboxed");
+step("each app is sandboxed");
 const withBpf = sh("systemctl", ["--version"]).includes("+BPF_FRAMEWORK");
 const probe = JSON.parse(await answer(ports.shop, "/probe?other=blog")) as Record<string, string>;
 console.log(probe);
@@ -185,7 +185,7 @@ ok(
     : "it can write its own data, and nothing else it tried (but another port: see the threat model's known limits)",
 );
 
-step("each product's build user reaches only its own key and source");
+step("each app's build user reaches only its own key and source");
 for (const path of ["/etc/modest-deploy/keys/blog", "/srv/modest-deploy/blog/source.git/HEAD", "/etc/modest-deploy/secrets/blog"]) {
   assert.match(sh("runuser", ["-u", "mb-shop", "--", "cat", path], { allowFail: true }), /Permission denied/, path);
 }
@@ -219,8 +219,8 @@ assert.equal((statSync(copy).mode & 0o777).toString(8), "600");
 assert.equal(statSync(copy).uid, 0);
 const { DatabaseSync } = await import("node:sqlite");
 assert.equal(new DatabaseSync(copy, { readOnly: true }).prepare("select count(*) as n from auth_users").get()?.n, 0);
-assert.equal(statSync("/var/lib/modest-deploy/shop/app.db").uid, Number(sh("id", ["-u", "md-shop"]).trim()), "the product's own files stay its own");
-ok("a working copy, readable by root only, and the product's files untouched");
+assert.equal(statSync("/var/lib/modest-deploy/shop/app.db").uid, Number(sh("id", ["-u", "md-shop"]).trim()), "the app's own files stay its own");
+ok("a working copy, readable by root only, and the app's files untouched");
 
 step("run again: add gives the same secret and key; install brings every unit up to date");
 const again = JSON.parse(mh("add", "shop", "--domain", "shop.example.org", "--repo", "example/shop", "--json").trim().split("\n").at(-1) ?? "{}");
@@ -228,7 +228,7 @@ assert.equal(again.secret, secrets.shop);
 assert.equal(again.deployKey, added.shop?.deployKey);
 assert.match(
   sh("modest-deploy", ["add", "shop", "--domain", "other.example.org", "--repo", "example/shop"], { allowFail: true }),
-  /already a product called shop/,
+  /already an app called shop/,
 );
 // Caddy itself checks the redirect's site before it's kept (add validates, then reloads).
 mh("add", "shop", "--domain", "shop.example.org", "--repo", "example/shop", "--redirect", "www.shop.example.org");
@@ -246,7 +246,7 @@ console.log(mh("list"));
 console.log(mh("remove", "blog"));
 assert.equal(sh("systemctl", ["is-active", "modest-deploy-blog.service"], { allowFail: true }).trim(), "inactive");
 assert.equal(readFileSync("/var/lib/modest-deploy/blog/note.txt", "utf8"), "kept");
-assert.equal((await webhook("blog", commits.blog?.[0] ?? "")).status, 401, "the same answer as a product that never existed");
+assert.equal((await webhook("blog", commits.blog?.[0] ?? "")).status, 401, "the same answer as an app that never existed");
 ok("removed; its data kept; its webhook answers as if it never existed");
 
 step("check, again, with everything running");

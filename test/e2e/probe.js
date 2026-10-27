@@ -1,4 +1,4 @@
-// A product for the acceptance checks (checks.ts): it tries, when asked, what a product
+// An app for the acceptance checks (checks.ts): it tries, when asked, what an app
 // that's been broken into would try, and answers with what it was allowed to do. Its
 // MODE makes it a bad version on purpose: one that crashes, never answers, answers 500,
 // or listens beyond 127.0.0.1. Only Node's own modules, so it installs without a network.
@@ -58,7 +58,7 @@ const ops = {
     }),
   status: () => attempt(() => readFileSync("/proc/self/status", "utf8")),
   bind,
-  // A listener left open, as a product broken into might, until "close".
+  // A listener left open, as an app broken into might, until "close".
   hold: ({ port, host }) =>
     new Promise((resolve) => {
       const server = tcp();
@@ -84,14 +84,14 @@ const handle = async (req, res) => {
     return res.end(JSON.stringify(results));
   }
   if (url.pathname === "/env") return res.end(JSON.stringify({ PORT, HOST, DATA_DIR }));
-  // What the product is given: its thread pool, and the memory Node sees it may use
+  // What the app is given: its thread pool, and the memory Node sees it may use
   if (url.pathname === "/given") return res.end(JSON.stringify({ pool: process.env.UV_THREADPOOL_SIZE, memory: process.constrainedMemory() }));
   if (url.pathname === "/alloc") {
     // Holds on to memory, touching every page, until the memory limit stops it.
     const held = [];
     for (;;) held.push(Buffer.alloc(64 * 1024 * 1024, 1));
   }
-  // Every other request is noted, so a check can tell whether anything reached the product.
+  // Every other request is noted, so a check can tell whether anything reached the app.
   appendFileSync(`${DATA_DIR}/seen.log`, `${req.headers.host} ${req.url}\n`);
   if (MODE === "silent") return;
   if (MODE === "error") {

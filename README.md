@@ -1,6 +1,6 @@
 # modest-deploy
 
-Zero-dependency deployment for Node, on your own server: launch each product with a
+Zero-dependency deployment for Node, on your own server: launch each app with a
 command, and deploy it on every push that passes CI.
 
 > **An early release.** It's tested end to end on Ubuntu with systemd, and has had
@@ -9,16 +9,16 @@ command, and deploy it on every push that passes CI.
 
 ## Why
 
-Launching a product shouldn't mean setting up hosting again. modest-deploy does the
-same few things for every product, the same way each time, so each new one is a
+Launching an app shouldn't mean setting up hosting again. modest-deploy does the
+same few things for every app, the same way each time, so each new one is a
 command, and every push after that deploys itself.
 
 - **No dependencies.** It's written in TypeScript for Node, which the server needs
-  anyway for the products. Everything else it uses is already on the server: Caddy,
+  anyway for the apps. Everything else it uses is already on the server: Caddy,
   git, and systemd.
 - **GitHub can't log in to the server.** It sends a signed message when CI passes,
   and that's all. No key to the server is ever stored in GitHub.
-- **Each product is fenced off** from the others and from the server.
+- **Each app is fenced off** from the others and from the server.
 - **It checks rather than assumes.** Before it does anything, it checks the server
   is set up safely, and says what to fix if not.
 
@@ -26,20 +26,20 @@ command, and every push after that deploys itself.
 
 **Install, once per server.** On a server you've set up (see "Before you install"),
 `modest-deploy install` adds its own parts: the deploy listener, the folder Caddy
-reads products' sites from, and the nightly backup.
+reads apps' sites from, and the nightly backup.
 
 **Check, any time.** `modest-deploy check` checks what it relies on, and says plainly
 what to fix: Node 24 or later, Caddy, and systemd present; Node and modest-deploy
 readable by the services' own users; SSH by key only, with no root login (as SSH
 treats a connection from outside); automatic security updates on; nothing
-listening to the outside but SSH, HTTP, and HTTPS; and products' memory fitting in
+listening to the outside but SSH, HTTP, and HTTPS; and apps' memory fitting in
 what the server has for them. `install` and `add` won't run while a check fails,
 unless you add `--anyway`.
 
-**Launch a product, with one command from your computer.**
+**Launch an app, with one command from your computer.**
 `modest-deploy launch <name> <domain>`:
 
-- makes the product's GitHub repository, from your template if you name one (or,
+- makes the app's GitHub repository, from your template if you name one (or,
   if it's there already, uses it, adding only the deploy key and webhook below);
 - on the server, gives it a system user, a folder, an environment file for its keys,
   a systemd service, and its domain in Caddy (which gets and renews its HTTPS
@@ -49,23 +49,23 @@ unless you add `--anyway`.
 - tells you what's left: pointing the domain's DNS at the server.
 
 Add `--redirect www.example.org` (or several, separated by commas) for domains that
-should send visitors to the product's own, at the same path: such as `www.`, or an
-old name. They never reach the product, and no domain can be used by two products.
+should send visitors to the app's own, at the same path: such as `www.`, or an
+old name. They never reach the app, and no domain can be used by two apps.
 Run `add` again on the server to change them.
 
-**Memory, set aside for each product.** A product is given 512M, or what you say with
-`--memory` (such as `1G`, or `max` for all that's left). It's set aside for it alone
-and is its ceiling, and a product is added only if it fits beside the others: the
+**Memory, set aside for each app.** An app is given 512M (or all that's left, if
+less; `add` and `launch` say how much), or what you say with `--memory` (such as `1G`, or `max` for all that's left). It's set aside for it alone
+and is its ceiling, and an app is added only if it fits beside the others: the
 server keeps a quarter of its memory for itself (never under 384M), for the system,
-SSH, Caddy, the listener, and deploys. So however busy products get, together they
+SSH, Caddy, the listener, and deploys. So however busy apps get, together they
 can't run the server out of memory, and one can't take another's. `modest-deploy
-resize <name> --memory <size>` gives one more or less, if it fits. Each product's
+resize <name> --memory <size>` gives one more or less, if it fits. Each app's
 Node thread pool is sized to the cores, for sign-ins (modest-auth hashes up to one
 password a core).
 
-On a 1GB server, that's 576M for products: one at 512M, or two at 256M. Run several
-products on a bigger server, or give anything with personal data or real traffic a
-server of its own. `modest-deploy list --server a,b` lists every server's products
+On a 1GB server, that's 576M for apps: one at 512M, or two at 256M. Run several
+apps on a bigger server, or give anything with personal data or real traffic a
+server of its own. `modest-deploy list --server a,b` lists every server's apps
 from your computer.
 
 **Deploy, on every push to `main` that passes CI.** GitHub sends a signed
@@ -84,14 +84,14 @@ from your computer.
 `modest-deploy deploy <name>` deploys `main`'s newest commit by hand, whether or not its
 CI passed: that's your choice to make.
 
-**Look after the products.** Each product's databases (its files ending `.db`,
+**Look after the apps.** Each app's databases (its files ending `.db`,
 `.sqlite`, or `.sqlite3`) are copied every night with SQLite's own backup, checked
-whole, and kept for 7 nights. A product that stops is restarted, more slowly each
+whole, and kept for 7 nights. An app that stops is restarted, more slowly each
 time if it keeps stopping. Logs are kept by systemd's journal.
 
-## What a product does
+## What an app does
 
-A product is a Node app in a GitHub repository that:
+An app is a Node server in a GitHub repository that:
 
 - starts with `node server.js`, and listens on `process.env.PORT`, at
   `process.env.HOST` (127.0.0.1): one listening anywhere else isn't deployed, so
@@ -113,13 +113,13 @@ Ubuntu 26.04 LTS server:
 - automatic security updates on (`unattended-upgrades`);
 - Node 24 or later, and Caddy, from their own package repositories.
 
-24.04 LTS also works, but it can't stop a compromised product from opening other
+24.04 LTS also works, but it can't stop a compromised app from opening other
 ports (see the threat model's known limits).
 
 ## Installing
 
 [Step by step](https://modest-deploy.com/start.html) goes from a new
-Ubuntu server to a product live on your domain. In short, on the server, from npm:
+Ubuntu server to an app live on your domain. In short, on the server, from npm:
 
 ```sh
 sudo npm install -g modest-deploy
@@ -145,19 +145,19 @@ sudo npm install -g modest-deploy@latest     # or: sudo git -C /opt/modest-deplo
 sudo modest-deploy install
 ```
 
-Running `install` again rewrites every unit it made, the products' included, so they
+Running `install` again rewrites every unit it made, the apps' included, so they
 use the new version.
 
 ## Restoring a backup
 
-Stop the product, put the copy back as the product's own (removing SQLite's
+Stop the app, put the copy back as the app's own (removing SQLite's
 `-wal` and `-shm` files, which belong to the database being replaced), and start it:
 
 ```sh
-sudo systemctl stop modest-deploy-shop
-sudo install -o md-shop -g md-shop -m 600 /var/backups/modest-deploy/shop/2026-10-25/app.db /var/lib/modest-deploy/shop/app.db
-sudo rm -f /var/lib/modest-deploy/shop/app.db-wal /var/lib/modest-deploy/shop/app.db-shm
-sudo systemctl start modest-deploy-shop
+sudo systemctl stop modest-deploy-blog
+sudo install -o md-blog -g md-blog -m 600 /var/backups/modest-deploy/blog/2026-10-25/app.db /var/lib/modest-deploy/blog/app.db
+sudo rm -f /var/lib/modest-deploy/blog/app.db-wal /var/lib/modest-deploy/blog/app.db-shm
+sudo systemctl start modest-deploy-blog
 ```
 
 Copy `/var/backups/modest-deploy` off the server too, or turn on your provider's
@@ -166,12 +166,12 @@ backups: copies on the same disk don't survive losing it.
 ## What it doesn't do
 
 - **Set up the server,** as above.
-- **Run products that need more than Node,** such as a browser or a system library.
+- **Run apps that need more than Node,** such as a browser or a system library.
   Those are better in a container of their own.
 - **DNS, email, or payments.** Those stay with your providers.
-- **Run across several servers.** A product that outgrows a shared server moves to a
+- **Run across several servers.** An app that outgrows a shared server moves to a
   server of its own, set up the same way.
-- **Keep anything about your servers.** Your domains, keys, and products live only on
+- **Keep anything about your servers.** Your domains, keys, and apps live only on
   your server. The repository holds no address, key, or token, and CI checks it.
 
 ## Documents

@@ -1,10 +1,10 @@
 # Acceptance checks: each protection, confirmed
 
 Checks that each protection in docs/threat-model.md, and each promise in README.md's
-"What it does" and "What a product does", holds. Written by an independent reviewer from
+"What it does" and "What an app does", holds. Written by an independent reviewer from
 those two documents alone, without seeing the code, and tested end to end (`test/e2e/`).
 **[PRIORITY]** marks the ones the reviewer thought most valuable. The setup, unless said:
-installed, with product "alpha" (and "beta" where needed) added, from a local repository.
+installed, with app "alpha" (and "beta" where needed) added, from a local repository.
 
 ## Threat model: How
 
@@ -29,16 +29,16 @@ installed, with product "alpha" (and "beta" where needed) added, from a local re
 10. **[PRIORITY]** A signed body of 1MB and a byte: refused, no deploy; just under 1MB is handled.
 11. Headers sent, then the body a byte at a time: closed within a bounded time; other requests still answered meanwhile.
 
-**Finding which products a server has**
+**Finding which apps a server has**
 12. **[PRIORITY]** POST to `/deploy/nosuch`, and to `/deploy/alpha` with a wrong signature: status, headers (but Date), and body byte-identical.
 
 **A message that names something to run**
 13. Signed messages with a `head_sha` of 39 or 41 characters, upper-case hex, `$(touch /tmp/x)`, or `--upload-pack=…`, and shell characters in repository or branch: none deploys; no stray file appears.
 
 **The listener**
-16. A request file naming an unknown product, and one with a bad commit: the deploy service starts and does nothing.
+16. A request file naming an unknown app, and one with a bad commit: the deploy service starts and does nothing.
 
-**A product reaching another, or the server**
+**An app reaching another, or the server**
 17. **[PRIORITY]** Alpha's code can't read beta's environment file, data, or code, `/root`, SSH host keys, deploy keys, webhook secrets, or `/etc/shadow`.
 18. **[PRIORITY]** Alpha's code can't write its own code, `/etc`, `/usr`, `/var/tmp`, or beta's data; it can write `DATA_DIR`; its `/tmp` isn't beta's or the host's.
 19. From alpha: `ps` and `/proc` show none of beta's processes; `sudo` and `su` fail; its capability sets are empty.
@@ -56,14 +56,14 @@ installed, with product "alpha" (and "beta" where needed) added, from a local re
 **A bad deploy**
 26. **[PRIORITY]** A version that crashes at start, one that never answers `GET /`, one that answers 500: each time, the previous version serves again.
 
-**A product taking another port** (Ubuntu 26.04)
+**An app taking another port** (Ubuntu 26.04)
 28. **[PRIORITY]** Alpha's code binding beta's port (beta stopped), 8080 on 0.0.0.0, or UDP: each fails with EPERM; its own `PORT` works.
 
-**A product reachable without Caddy**
+**An app reachable without Caddy**
 29. **[PRIORITY]** A version listening on 0.0.0.0, and one on `::`: neither stays live.
 30. Alpha opening a listener at runtime, outside a deploy: `check` and the nightly run report it.
 
-**A build reaching another product's key or source**
+**A build reaching another app's key or source**
 31. As alpha's build user: beta's deploy key and repository copy can't be read; its own can.
 
 **A build that ran code of its own lasting, or racing root**
@@ -106,22 +106,22 @@ installed, with product "alpha" (and "beta" where needed) added, from a local re
 **A burst of deploy requests**
 53. 50 valid requests for alpha in a second: the deploy service never hits its start limit; main's tip ends up live.
 
-**Memory, set aside for each product** (added with 0.4.0, before the code)
+**Memory, set aside for each app** (added with 0.4.0, before the code)
 63. Alpha's unit sets aside its memory and caps it there (512M); Node in alpha sees that as its limit; its thread pool is the cores and two (at most 18); the deploy service builds within the server's own share.
-64. A product given more memory than there's room for isn't added, and leaves nothing behind; `max` gives what's left; with none left, another isn't added; `resize` gives less, and won't give more than there's room for; `list` shows each one's memory, and what's given out.
+64. An app given more memory than there's room for isn't added, and leaves nothing behind; `max` gives what's left; with none left, another isn't added; `resize` gives less, and won't give more than there's room for; `list` shows each one's memory, and what's given out.
 65. With alpha given all that's left, and alpha and beta both holding on to memory until stopped, while beta deploys: SSH, Caddy, and the listener answer, beta's deploy goes live, and alpha comes back.
 
 ## README: What it does
 
-54. Install: the listener, Caddy's sites folder, the backup timer, and their units are present and enabled; `install` again rewrites every unit, products' included, with nothing duplicated.
+54. Install: the listener, Caddy's sites folder, the backup timer, and their units are present and enabled; `install` again rewrites every unit, apps' included, with nothing duplicated.
 55. `check` reports Node and modest-deploy readable by the services' users; with the install path mode 700 root, it fails.
-56. Add or launch's server half: a system user, a folder, an environment file (mode 600, the product's), a unit, and a Caddy site with the domain, which Caddy accepts.
-57. A domain another product uses: refused.
-58. A product that keeps crashing restarts with growing delays.
-59. Products' output is in `journalctl -u modest-deploy-<name>`; no secret in the deploy logs.
+56. Add or launch's server half: a system user, a folder, an environment file (mode 600, the app's), a unit, and a Caddy site with the domain, which Caddy accepts.
+57. A domain another app uses: refused.
+58. An app that keeps crashing restarts with growing delays.
+59. Apps' output is in `journalctl -u modest-deploy-<name>`; no secret in the deploy logs.
 60. `deploy` by hand: main's tip, with no CI message at all.
 
-## README: What a product does
+## README: What an app does
 
 61. **[PRIORITY]** The app gets `PORT`, `HOST=127.0.0.1`, and `DATA_DIR`; nothing reaches its port but from this machine.
 62. An app with no `server.js`, or one never answering `GET /`, isn't deployed.
@@ -138,7 +138,7 @@ answer from the server (covered by `src/commands.test.ts`, as it needs GitHub).
 - No figures for "slow requests are cut off", "a few redirects", "a memory limit", "checks it answers" (timeout, which statuses), or "more slowly each time".
 - Constant-time comparison isn't observable end to end: a unit test or review is the check.
 - Delivery ids: the README says acted-on deliveries are ignored; the threat model calls it a convenience. Safety shouldn't rest on it.
-- "The product's own repository and its CI workflow": by `full_name`, repository id, or workflow path? A renamed repository or workflow is untested.
+- "The app's own repository and its CI workflow": by `full_name`, repository id, or workflow path? A renamed repository or workflow is untested.
 - "One listening anywhere else isn't deployed" (README) and "switched back" (threat model) differ; neither says what happens with both 127.0.0.1 and 0.0.0.0, or `::1`.
 - Whether "1GB" is 10^9 or 2^30 bytes, and counted before or after `npm ci`.
 - "Secrets and keys out of reach" has no list of paths.

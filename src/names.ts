@@ -2,7 +2,7 @@
 // unit name, a user name, a Caddy file, or an argument. Each is strict enough that
 // nothing matching it can mean anything else (no "/", "..", spaces, or quotes).
 
-/** A product's name: lowercase letters, digits, and hyphens, 2 to 29 long (so "md-" + name fits a 32-character user name). */
+/** An app's name: lowercase letters, digits, and hyphens, 2 to 29 long (so "md-" + name fits a 32-character user name). */
 export const isName = (value: unknown): value is string => typeof value === "string" && /^[a-z][a-z0-9-]{0,27}[a-z0-9]$/.test(value) && !value.includes("--");
 
 /** A domain: lowercase labels of letters, digits, and hyphens, at least two, ending in letters. */
@@ -19,7 +19,7 @@ export const isRepo = (value: unknown): value is string =>
 /** A commit: 40 lowercase hex characters, as GitHub sends them. */
 export const isCommit = (value: unknown): value is string => typeof value === "string" && /^[0-9a-f]{40}$/.test(value);
 
-/** A port a product can listen on: above the ones only root can use. */
+/** A port an app can listen on: above the ones only root can use. */
 export const isPort = (value: unknown): value is number => Number.isInteger(value) && (value as number) >= 1024 && (value as number) <= 65535;
 
 /** Repositories compare without case, as GitHub's do. */

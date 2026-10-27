@@ -1,5 +1,5 @@
 // GitHub's webhook messages: whether one is really from GitHub (its signature), and
-// whether it's one to act on (CI passed for a push to main, in this product's own
+// whether it's one to act on (CI passed for a push to main, in this app's own
 // repository). Nothing else about a message is used.
 
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -7,7 +7,7 @@ import { isCommit, sameRepo } from "./names.ts";
 
 /**
  * Whether `header` (X-Hub-Signature-256) is the HMAC-SHA256 of exactly these bytes
- * with this product's secret. Compared in constant time, so the answer's timing
+ * with this app's secret. Compared in constant time, so the answer's timing
  * says nothing about how close a guess was.
  */
 export function signatureValid(body: Uint8Array, header: string | undefined, secret: string): boolean {
@@ -24,7 +24,7 @@ const record = (value: unknown): Record<string, unknown> =>
 
 /**
  * What to do with a message already known to be from GitHub: deploy a commit, or
- * ignore it (saying why). Only a finished, successful run of the product's CI
+ * ignore it (saying why). Only a finished, successful run of the app's CI
  * workflow, for a push to its branch, in its own repository, deploys.
  */
 export function decide(event: string | undefined, payload: unknown, watched: Watched): Decision {
