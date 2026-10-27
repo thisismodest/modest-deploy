@@ -9,8 +9,8 @@ Every change that affects how it's used, or what it promises. The format follows
 ### Added
 
 - Memory set aside for each app: 512M (or all that's left, if less), or what
-  `--memory` gives on `add` and `launch` (such as `1G`, or `max` for all that's left). It's the app's alone and
-  its ceiling, and an app is added only if it fits beside the others, as the server
+  `--memory` gives on `add` and `launch` (such as `1G`, or `max` for all that's left).
+  It's the app's alone and its ceiling, and an app is added only if it fits beside the others, as the server
   keeps a quarter of its memory for itself (never under 384M). Together, apps can't
   run the server out of memory, and one can't take another's.
 - `modest-deploy resize <name> --memory <size>`: more memory for an app, or less, if
@@ -37,6 +37,11 @@ Every change that affects how it's used, or what it promises. The format follows
 - Settings from before memory was given out have 512M, as every app had. A server
   whose apps now add up to more than it has for them is found by `check` (so
   `install` and `add` stop, unless `--anyway`): give some less with `resize`.
+
+### Fixed
+
+- An app named `listener`, `deploy`, or `backup` would have had its unit written over
+  one of modest-deploy's own (`modest-deploy-<name>.service`): those names are refused.
 
 ## [0.3.0] - 2026-10-27
 

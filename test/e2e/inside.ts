@@ -21,7 +21,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const mh = (...args: string[]) => sh("modest-deploy", args);
 
 const secrets: Record<string, string> = {};
-const commits: Record<string, string[]> = { shop: [], blog: [] };
+const commits: Record<string, string[]> = { club: [], blog: [] };
 
 /** Commits a version of an app to the stand-in GitHub, returning its commit. */
 function commit(name: string, version: string, server = readFileSync("/e2e/app.js", "utf8").replace("__VERSION__", version)): string {
@@ -86,24 +86,24 @@ ok("the listener, the deploy path, and the backup timer are running");
 
 step("add two apps");
 const added: Record<string, { port?: number; deployKey: string; secret: string; webhook: string }> = {};
-for (const name of ["shop", "blog"]) {
+for (const name of ["club", "blog"]) {
   const out = mh("add", name, "--domain", `${name}.example.org`, "--repo", `example/${name}`, "--json").trim().split("\n").at(-1) ?? "";
   added[name] = JSON.parse(out);
   secrets[name] = added[name]?.secret ?? "";
 }
-assert.equal(added.shop?.webhook, "https://deploy.example.org/deploy/shop");
+assert.equal(added.club?.webhook, "https://deploy.example.org/deploy/club");
 const ports = {
-  shop: JSON.parse(readFileSync("/etc/modest-deploy/apps/shop.json", "utf8")).port,
+  club: JSON.parse(readFileSync("/etc/modest-deploy/apps/club.json", "utf8")).port,
   blog: JSON.parse(readFileSync("/etc/modest-deploy/apps/blog.json", "utf8")).port,
 };
-ok(`added, on ports ${ports.shop} and ${ports.blog}`);
+ok(`added, on ports ${ports.club} and ${ports.blog}`);
 
 step("the stand-in GitHub");
 sh("sh", ["-c", "mkdir -p /home/git/.ssh /home/git/example && chown -R git:git /home/git"]);
-writeFileSync("/home/git/.ssh/authorized_keys", `${added.shop?.deployKey}\n${added.blog?.deployKey}\n`);
+writeFileSync("/home/git/.ssh/authorized_keys", `${added.club?.deployKey}\n${added.blog?.deployKey}\n`);
 sh("chown", ["git:git", "/home/git/.ssh/authorized_keys"]);
 sh("git", ["config", "--global", "--add", "safe.directory", "*"]);
-for (const name of ["shop", "blog"]) {
+for (const name of ["club", "blog"]) {
   sh("runuser", ["-u", "git", "--", "git", "init", "-q", "--bare", "-b", "main", `/home/git/example/${name}.git`]);
   sh("git", ["clone", "-q", `/home/git/example/${name}.git`, `/root/work/${name}`]);
   sh("git", ["config", "user.email", "e2e@example.org"], { cwd: `/root/work/${name}` });
@@ -115,30 +115,30 @@ for (const name of ["shop", "blog"]) {
 ok("two repositories, reachable as git@github.com:example/<name>.git");
 
 step("a stand-in GitHub that isn't GitHub is refused: its host key isn't GitHub's");
-const v1 = commit("shop", "shop v1");
-assert.equal((await webhook("shop", v1)).status, 202);
+const v1 = commit("club", "club v1");
+assert.equal((await webhook("club", v1)).status, 202);
 await settled();
-assert.equal(await answer(ports.shop), "(nothing)");
+assert.equal(await answer(ports.club), "(nothing)");
 assert.match(sh("journalctl", ["-u", "modest-deploy-deploy.service", "--no-pager"]), /didn't have GitHub's host key/);
 ok("nothing deployed: GitHub's real host keys are pinned");
 const hostKey = readFileSync("/etc/ssh/ssh_host_ed25519_key.pub", "utf8").split(" ").slice(0, 2).join(" ");
 writeFileSync("/etc/modest-deploy/keys/known_hosts", `github.com ${hostKey}\n`);
 
 step("a signed message for a passed CI run deploys");
-const response = await webhook("shop", v1);
+const response = await webhook("club", v1);
 assert.equal(response.status, 202);
 assert.match(await response.text(), /Deploying/);
 await settled();
-assert.equal(await answer(ports.shop), "shop v1");
-ok("shop v1 is running, with modest-auth installed from npm");
+assert.equal(await answer(ports.club), "club v1");
+ok("club v1 is running, with modest-auth installed from npm");
 await webhook("blog", commit("blog", "blog v1"));
 await settled();
 assert.equal(await answer(ports.blog), "blog v1");
 ok("blog v1 is running");
 
 step("through Caddy, on HTTPS");
-const viaCaddy = sh("curl", ["-sk", "--resolve", "shop.example.org:443:127.0.0.1", "https://shop.example.org/"]);
-assert.equal(viaCaddy, "shop v1");
+const viaCaddy = sh("curl", ["-sk", "--resolve", "club.example.org:443:127.0.0.1", "https://club.example.org/"]);
+assert.equal(viaCaddy, "club v1");
 const deployDomain = sh("curl", [
   "-sk",
   "-o",
@@ -160,19 +160,19 @@ const viaDeploy = sh("curl", [
   "POST",
   "--resolve",
   "deploy.example.org:443:127.0.0.1",
-  "https://deploy.example.org/deploy/shop",
+  "https://deploy.example.org/deploy/club",
 ]);
 assert.equal(viaDeploy, "401");
 ok("the app answers on its domain; the deploy domain only passes /deploy/ on, and refuses an unsigned message");
 
 step("an unsigned or wrongly signed message is refused, and leaves nothing");
-assert.equal((await webhook("shop", v1, "wrong")).status, 401);
+assert.equal((await webhook("club", v1, "wrong")).status, 401);
 assert.equal(readdirSync("/var/spool/modest-deploy/requests").length, 0);
 ok("refused");
 
 step("each app is sandboxed");
 const withBpf = sh("systemctl", ["--version"]).includes("+BPF_FRAMEWORK");
-const probe = JSON.parse(await answer(ports.shop, "/probe?other=blog")) as Record<string, string>;
+const probe = JSON.parse(await answer(ports.club, "/probe?other=blog")) as Record<string, string>;
 console.log(probe);
 for (const [what, result] of Object.entries(probe)) {
   if (what === "write its own data") assert.equal(result, "allowed", what);
@@ -187,58 +187,58 @@ ok(
 
 step("each app's build user reaches only its own key and source");
 for (const path of ["/etc/modest-deploy/keys/blog", "/srv/modest-deploy/blog/source.git/HEAD", "/etc/modest-deploy/secrets/blog"]) {
-  assert.match(sh("runuser", ["-u", "mb-shop", "--", "cat", path], { allowFail: true }), /Permission denied/, path);
+  assert.match(sh("runuser", ["-u", "mb-club", "--", "cat", path], { allowFail: true }), /Permission denied/, path);
 }
-assert.match(sh("runuser", ["-u", "mb-shop", "--", "ls", "/etc/modest-deploy/keys"], { allowFail: true }), /Permission denied/);
-ok("shop's build user can't read blog's key, source, or secret, nor list the keys");
+assert.match(sh("runuser", ["-u", "mb-club", "--", "ls", "/etc/modest-deploy/keys"], { allowFail: true }), /Permission denied/);
+ok("club's build user can't read blog's key, source, or secret, nor list the keys");
 
 step("a newer version deploys; an old message sent again doesn't roll it back");
-const v2 = commit("shop", "shop v2");
-await webhook("shop", v2);
+const v2 = commit("club", "club v2");
+await webhook("club", v2);
 await settled();
-assert.equal(await answer(ports.shop), "shop v2");
-await webhook("shop", v1);
+assert.equal(await answer(ports.club), "club v2");
+await webhook("club", v1);
 await settled();
-assert.equal(await answer(ports.shop), "shop v2");
+assert.equal(await answer(ports.club), "club v2");
 assert.match(sh("journalctl", ["-u", "modest-deploy-deploy.service", "--no-pager"]), /older than main's newest/);
 ok("v2 running, and v1's message again was skipped");
 
 step("a version that doesn't start is switched back");
-const v3 = commit("shop", "broken", 'throw new Error("this version is broken");\n');
-await webhook("shop", v3);
+const v3 = commit("club", "broken", 'throw new Error("this version is broken");\n');
+await webhook("club", v3);
 await settled();
-assert.equal(await answer(ports.shop), "shop v2");
+assert.equal(await answer(ports.club), "club v2");
 assert.match(sh("journalctl", ["-u", "modest-deploy-deploy.service", "--no-pager"]), /didn't answer, so \w+ is running again/);
 ok("v2 is running again");
 
 step("backup");
 console.log(mh("backup"));
 const night = new Date().toISOString().slice(0, 10);
-const copy = `/var/backups/modest-deploy/shop/${night}/app.db`;
+const copy = `/var/backups/modest-deploy/club/${night}/app.db`;
 assert.equal((statSync(copy).mode & 0o777).toString(8), "600");
 assert.equal(statSync(copy).uid, 0);
 const { DatabaseSync } = await import("node:sqlite");
 assert.equal(new DatabaseSync(copy, { readOnly: true }).prepare("select count(*) as n from auth_users").get()?.n, 0);
-assert.equal(statSync("/var/lib/modest-deploy/shop/app.db").uid, Number(sh("id", ["-u", "md-shop"]).trim()), "the app's own files stay its own");
+assert.equal(statSync("/var/lib/modest-deploy/club/app.db").uid, Number(sh("id", ["-u", "md-club"]).trim()), "the app's own files stay its own");
 ok("a working copy, readable by root only, and the app's files untouched");
 
 step("run again: add gives the same secret and key; install brings every unit up to date");
-const again = JSON.parse(mh("add", "shop", "--domain", "shop.example.org", "--repo", "example/shop", "--json").trim().split("\n").at(-1) ?? "{}");
-assert.equal(again.secret, secrets.shop);
-assert.equal(again.deployKey, added.shop?.deployKey);
+const again = JSON.parse(mh("add", "club", "--domain", "club.example.org", "--repo", "example/club", "--json").trim().split("\n").at(-1) ?? "{}");
+assert.equal(again.secret, secrets.club);
+assert.equal(again.deployKey, added.club?.deployKey);
 assert.match(
-  sh("modest-deploy", ["add", "shop", "--domain", "other.example.org", "--repo", "example/shop"], { allowFail: true }),
-  /already an app called shop/,
+  sh("modest-deploy", ["add", "club", "--domain", "other.example.org", "--repo", "example/club"], { allowFail: true }),
+  /already an app called club/,
 );
 // Caddy itself checks the redirect's site before it's kept (add validates, then reloads).
-mh("add", "shop", "--domain", "shop.example.org", "--repo", "example/shop", "--redirect", "www.shop.example.org");
-assert.match(readFileSync("/etc/modest-deploy/caddy/shop.caddy", "utf8"), /www\.shop\.example\.org \{\n\tredir https:\/\/shop\.example\.org\{uri\} permanent/);
+mh("add", "club", "--domain", "club.example.org", "--repo", "example/club", "--redirect", "www.club.example.org");
+assert.match(readFileSync("/etc/modest-deploy/caddy/club.caddy", "utf8"), /www\.club\.example\.org \{\n\tredir https:\/\/club\.example\.org\{uri\} permanent/);
 assert.match(
-  sh("modest-deploy", ["add", "blog", "--domain", "blog.example.org", "--repo", "example/blog", "--redirect", "www.shop.example.org"], { allowFail: true }),
-  /www\.shop\.example\.org is already in use here/,
+  sh("modest-deploy", ["add", "blog", "--domain", "blog.example.org", "--repo", "example/blog", "--redirect", "www.club.example.org"], { allowFail: true }),
+  /www\.club\.example\.org is already in use here/,
 );
 console.log(mh("install"));
-assert.equal(await answer(ports.shop), "shop v2");
+assert.equal(await answer(ports.club), "club v2");
 ok("the same secret and key; a different domain refused; a redirect Caddy accepts, and one already in use refused; install again keeps everything running");
 
 step("list, and remove");

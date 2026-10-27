@@ -27,7 +27,7 @@ export async function readPlain(path: string, most = 1024 * 1024): Promise<strin
   try {
     const found = await file.stat();
     if (!found.isFile()) throw new Error(`${basename(path)} isn't a plain file`);
-    if (found.size > most) throw new Error(`${basename(path)} is larger than ${most / 1024}KB`);
+    if (found.size > most) throw new Error(`${basename(path)} is larger than ${most} bytes`);
     return await file.readFile("utf8");
   } finally {
     await file.close();

@@ -37,6 +37,7 @@ docs/threat-model.md for how.
 | launch, and list --server, from your computer | `src/launch.ts` |
 | The systemd units and Caddy sites it writes | `src/units.ts` |
 | Each app's settings | `src/apps.ts` |
+| Writing files whole, reading only plain ones, and whether a path exists | `src/files.ts` |
 | Where everything lives, and the users | `src/paths.ts` |
 | Running programs (execFile, never a shell) | `src/run.ts` |
 | Names, domains, repositories, and commits: the patterns they must match | `src/names.ts` |
