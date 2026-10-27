@@ -6,6 +6,7 @@
 import { realpathSync } from "node:fs";
 import { checkServer, outsidePorts, report } from "./check.ts";
 import { answersWithin, deploy } from "./deploy.ts";
+import { helpFor, OVERVIEW, wantsHelp } from "./help.ts";
 import { launch } from "./launch.ts";
 import { createListener } from "./listener.ts";
 import { isName } from "./names.ts";
@@ -14,27 +15,6 @@ import { readProduct } from "./products.ts";
 import { enqueue, takeOne } from "./queue.ts";
 import { must, run } from "./run.ts";
 import { add, backup, copyDatabase, install, list, remove, type Server } from "./server.ts";
-
-const USAGE = `modest-deploy: deploy small Node products to your own server.
-
-On the server (with sudo):
-  check                                         check the server is set up safely
-  install --domain <deploy-domain>              install modest-deploy's own parts; again after updating it
-  add <name> --domain <domain> --repo <owner/repo> [--redirect <domain,...>] [--json]
-                                                add a product (launch does this for you); again to change its redirects
-  list                                          the products, and what each is running
-  deploy <name>                                 deploy main's newest commit now (whether or not CI passed)
-  restart <name>                                restart a product (after changing its keys)
-  logs <name>                                   a product's latest log lines
-  remove <name>                                 take a product off (its data stays)
-  backup                                        copy every product's databases now
-
-On your laptop:
-  launch <name> <domain> --server <ssh-host> [--redirect <domain,...>] [--repo <owner/repo>] [--template <owner/repo>] [--public]
-                                                make the repository, add the product, and connect them
-
---redirect names domains that send visitors to the product's own, such as www.shop.example.org.
-Add --anyway to install or add to go on when check finds something to fix.`;
 
 /** The words after the command, and its --options. */
 function parse(args: string[]) {
@@ -72,6 +52,15 @@ const product = (name: string | undefined) => {
 
 async function main(argv: string[]): Promise<void> {
   const [command, ...rest] = argv;
+  // Asking for help, anywhere, only ever prints it: nothing runs.
+  if (command === undefined || command === "-h" || command === "--help") return log(OVERVIEW);
+  if (command === "help" || wantsHelp(rest)) {
+    const about = command === "help" ? rest[0] : command;
+    const page = about === undefined ? OVERVIEW : helpFor(about);
+    if (page) return log(page);
+    process.exitCode = 1;
+    return log(`There's no command called ${about}.\n\n${OVERVIEW}`);
+  }
   const { words, flag, text, domains } = parse(rest);
   switch (command) {
     case "check": {
@@ -181,8 +170,8 @@ async function main(argv: string[]): Promise<void> {
     case "copy-database":
       return copyDatabase(words[0] ?? "", words[1] ?? "");
     default:
-      log(USAGE);
-      if (command && command !== "help" && command !== "--help") process.exitCode = 1;
+      process.exitCode = 1;
+      log(`There's no command called ${command}.\n\n${OVERVIEW}`);
   }
 }
 

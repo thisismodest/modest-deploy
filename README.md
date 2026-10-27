@@ -117,7 +117,8 @@ sudo git clone https://github.com/thisismodest/modest-deploy.git /opt/modest-dep
 sudo ln -s /opt/modest-deploy/src/cli.ts /usr/local/bin/modest-deploy
 ```
 
-Then point the deploy domain's DNS at the server: GitHub's messages arrive there. For
+Then point the deploy domain's DNS at the server: GitHub's messages arrive there. `modest-deploy --help`
+says how to get started, and `modest-deploy help <command>` gives each command's page. For
 `launch`, install it on your laptop too, the same way.
 
 ## Updating modest-deploy

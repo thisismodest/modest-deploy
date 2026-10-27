@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { onServer, PRODUCT } from "../test/helpers.ts";
 import { checkServer, outsidePorts } from "./check.ts";
 import { isServer, launch } from "./launch.ts";
@@ -324,4 +326,42 @@ test("a Match block that allows passwords for one user, or from a private addres
   const finding = (await checkServer(run, async () => "")).find((f) => f.what === "SSH: no sign-in by password");
   assert.equal(finding?.ok, false);
   assert.match(finding?.fix ?? "", /allowed for ann/);
+});
+
+const CLI = fileURLToPath(new URL("./cli.ts", import.meta.url));
+const cli = (...args: string[]) => spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8", timeout: 20_000 });
+const COMMANDS = ["check", "install", "launch", "add", "list", "deploy", "restart", "logs", "remove", "backup"];
+
+test("with no command, -h, --help, or help, it says how to get started, and exits cleanly", () => {
+  for (const args of [[], ["-h"], ["--help"], ["help"]]) {
+    const ran = cli(...args);
+    assert.equal(ran.status, 0, JSON.stringify(args));
+    assert.match(ran.stdout, /Getting started/, JSON.stringify(args));
+    for (const command of COMMANDS) assert.ok(ran.stdout.includes(command), `${JSON.stringify(args)} names ${command}`);
+  }
+});
+
+test("asking for a command's help only prints it: the command never runs", () => {
+  for (const command of COMMANDS) {
+    for (const args of [
+      [command, "--help"],
+      [command, "-h"],
+      ["help", command],
+      [command, "shop", "--domain", "shop.example.org", "--repo", "example/shop", "--help"],
+    ]) {
+      const ran = cli(...args);
+      assert.equal(ran.status, 0, JSON.stringify(args));
+      assert.ok(ran.stdout.startsWith(`modest-deploy ${command}`), JSON.stringify(args));
+      // Run for real, a command for the server stops at once, as the tests aren't root.
+      assert.doesNotMatch(ran.stdout + ran.stderr, /run it with sudo|isn't installed|the name must be|there's no product/, JSON.stringify(args));
+    }
+  }
+});
+
+test("an unknown command says so, and fails", () => {
+  for (const args of [["nonsense"], ["help", "nonsense"], ["help", "constructor"], ["toString", "--help"]]) {
+    const ran = cli(...args);
+    assert.equal(ran.status, 1, JSON.stringify(args));
+    assert.match(ran.stdout, /There's no command called/, JSON.stringify(args));
+  }
 });

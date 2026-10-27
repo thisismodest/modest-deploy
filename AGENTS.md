@@ -26,6 +26,7 @@ docs/threat-model.md for how.
 | What | Where |
 | --- | --- |
 | The commands | `src/cli.ts` |
+| What it says about itself: getting started, and a page for each command | `src/help.ts` |
 | Checking GitHub's signed webhook messages | `src/webhook.ts` |
 | The deploy listener: an HTTP server for those messages | `src/listener.ts` |
 | Deploy requests, from the listener to the deploy service | `src/queue.ts` |

@@ -6,6 +6,12 @@ Every change that affects how it's used, or what it promises. The format follows
 
 ## Unreleased
 
+### Added
+
+- Help in the terminal: `modest-deploy`, `-h`, or `--help` says how to get started, and
+  `modest-deploy help <command>` (or `<command> --help`) gives each command's page: what
+  it does and changes, its options, and an example. Asking for help never runs a command.
+
 ## [0.2.0] - 2026-10-26
 
 ### Added
