@@ -3,9 +3,9 @@
 // deploy key and the signed webhook. Uses gh and ssh, as you already do; the webhook's
 // secret goes to GitHub on standard input, never in a command line.
 
-import { areRedirects, MOST_REDIRECTS } from "./apps.ts";
-import { isMemory, parseMemory, sizeText } from "./memory.ts";
-import { isDomain, isName, isRepo } from "./names.ts";
+import { BRANCH, checkAppInput, WORKFLOW, WRONG } from "./apps.ts";
+import { isMemory, sizeText } from "./memory.ts";
+import { isDomain, isRepo } from "./names.ts";
 import { must, type Run } from "./run.ts";
 import type { Added } from "./server.ts";
 
@@ -27,14 +27,10 @@ export const isServer = (value: unknown): value is string =>
 
 export async function launch(run: Run, options: Launch, log: (line: string) => void): Promise<void> {
   const { name, domain, server, redirects = [] } = options;
-  if (!isName(name)) throw new Error("the name must be 2 to 29 lowercase letters, digits, and single hyphens, starting with a letter");
-  if (!isDomain(domain)) throw new Error("the domain must be a domain, such as blog.example.org");
-  if (!areRedirects(redirects, domain))
-    throw new Error(`the redirects must be up to ${MOST_REDIRECTS} domains, each once, other than the app's own, such as www.blog.example.org`);
+  // The same checks, and words, as add's on the server: before anything is done.
+  checkAppInput({ name, domain, redirects, repo: options.repo, memory: options.memory });
   if (!isServer(server)) throw new Error("the server must be a host from your SSH config, or user@host");
   if (options.template !== undefined && !isRepo(options.template)) throw new Error("the template must be a repository, as owner/name");
-  if (options.memory !== undefined && parseMemory(options.memory) === null)
-    throw new Error("the memory must be a size, such as 512M or 1G (at least 128M), or max");
   const env = {
     PATH: process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin",
     HOME: process.env.HOME ?? "",
@@ -59,7 +55,7 @@ export async function launch(run: Run, options: Launch, log: (line: string) => v
   }
 
   const repo = options.repo ?? `${(await gh(["api", "user", "--jq", ".login"])).trim()}/${name}`;
-  if (!isRepo(repo)) throw new Error("the repository must be owner/name, as on GitHub");
+  if (!isRepo(repo)) throw new Error(WRONG.repo);
   if ((await run("gh", ["repo", "view", repo, "--json", "name"], { env })).code === 0) {
     log(`Using the repository ${repo}, which already exists.`);
   } else {
@@ -68,17 +64,10 @@ export async function launch(run: Run, options: Launch, log: (line: string) => v
   }
 
   // Every value here has been checked above, so the server's shell sees only plain words.
-  const answer = await must(
-    run,
-    "ssh",
-    [
-      ...["-o", "BatchMode=yes", "--", server, "sudo", "modest-deploy", "add", name, "--domain", domain, "--repo", repo],
-      ...(redirects.length ? ["--redirect", redirects.join(",")] : []),
-      ...(options.memory === undefined ? [] : ["--memory", options.memory]),
-      "--json",
-    ],
-    { env, timeout: 120_000 },
-  );
+  const answer = await must(run, "ssh", ["-o", "BatchMode=yes", "--", server, "sudo", "modest-deploy", ...addWords({ ...options, repo }), "--json"], {
+    env,
+    timeout: 120_000,
+  });
   // The JSON is the last line: check's report comes before it. Each part is checked
   // strictly: whatever the server says, only this app's webhook and one plain key
   // can reach GitHub.
@@ -126,8 +115,8 @@ export async function launch(run: Run, options: Launch, log: (line: string) => v
   log(`Gave GitHub the server's read-only deploy key, and the webhook to ${webhook}.`);
   log("");
   log("Left to do:");
-  log(`  1. Point the DNS of ${[domain, ...redirects].join(", ")} at the server (an A record each, and AAAA if it has IPv6).`);
-  log(`  2. Push to main, with a CI workflow at .github/workflows/ci.yml. Once it passes, it's live at https://${domain}.`);
+  log(`  1. Point ${dnsFor([domain, ...redirects])}.`);
+  log(`  2. Push to ${BRANCH}, with a CI workflow at ${WORKFLOW}. Once it passes, it's live at https://${domain}.`);
 }
 
 /**
@@ -151,20 +140,32 @@ export async function listServers(run: Run, servers: string[], log: (line: strin
   return failed;
 }
 
+/** The DNS to point at the server, as said after adding an app: an A record each, and AAAA for IPv6. */
+export const dnsFor = (domains: string[]) => `the DNS of ${domains.join(", ")} at the server (an A record each, and AAAA if it has IPv6)`;
+
+/** modest-deploy add's words for this app: as launch sends them over SSH, and as the steps by hand show them. */
+const addWords = ({ name, domain, repo, redirects = [], memory }: Launch & { repo: string }) => [
+  "add",
+  name,
+  "--domain",
+  domain,
+  "--repo",
+  repo,
+  ...(redirects.length ? ["--redirect", redirects.join(",")] : []),
+  ...(memory === undefined ? [] : ["--memory", memory]),
+];
+
 /** What launch does, as steps to do by hand, with this app's own details. Every value has been checked. */
-function byHand({ name, domain, server, redirects = [], repo, memory }: Launch): string[] {
-  const where = repo ?? `your-username/${name}`;
-  const add = [
-    `ssh -t ${server} sudo modest-deploy add ${name} --domain ${domain} --repo ${where}`,
-    ...(redirects.length ? [`--redirect ${redirects.join(",")}`] : []),
-    ...(memory === undefined ? [] : [`--memory ${memory}`]),
-  ].join(" ");
+function byHand(options: Launch): string[] {
+  const { name, domain, server, redirects = [] } = options;
+  const where = options.repo ?? `your-username/${name}`;
+  const add = `ssh -t ${server} sudo modest-deploy ${addWords({ ...options, repo: where }).join(" ")}`;
   return [
     `  1. On GitHub, make the repository ${where}, if it isn't there.`,
     "  2. Add the app on the server, which prints a deploy key, and a webhook with its secret:",
     `       ${add}`,
     `  3. In ${where}'s settings on GitHub: add the deploy key (Deploy keys, read-only), and the webhook`,
     `     (Webhooks: its address, content type application/json, the secret, and only the "Workflow runs" event).`,
-    `  4. Point the DNS of ${[domain, ...redirects].join(", ")} at the server (an A record each, and AAAA if it has IPv6), and push to main.`,
+    `  4. Point ${dnsFor([domain, ...redirects])}, and push to ${BRANCH}.`,
   ];
 }

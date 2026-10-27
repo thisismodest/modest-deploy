@@ -90,9 +90,18 @@ async function matchAllowances(read: (path: string) => Promise<string>, path = "
  */
 export async function checkServer(
   run: Run,
-  read = (path: string) => readFile(path, "utf8"),
-  cli?: string,
-  fleet?: { apps: { name: string; memory: number }[]; machine: Machine },
+  {
+    read = (path: string) => readFile(path, "utf8"),
+    cli,
+    fleet,
+  }: {
+    /** How files are read (tests give their own). */
+    read?: (path: string) => Promise<string>;
+    /** modest-deploy itself, to check the services' users can run it. */
+    cli?: string;
+    /** The apps and the server's size, to check their memory fits. */
+    fleet?: { apps: { name: string; memory: number }[]; machine: Machine };
+  } = {},
 ): Promise<Finding[]> {
   const findings: Finding[] = [];
   const add = (ok: boolean, what: string, fix: string) => findings.push({ ok, what, fix });

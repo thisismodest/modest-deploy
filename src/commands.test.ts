@@ -44,7 +44,7 @@ test("a safe server passes every check but root (the tests aren't root)", async 
     "dpkg-query -W -f=${Status} unattended-upgrades": ok("install ok installed"),
     "ss -Hltn": ok("LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*"),
   });
-  const findings = await checkServer(run, async () => 'APT::Periodic::Unattended-Upgrade "1";');
+  const findings = await checkServer(run, { read: async () => 'APT::Periodic::Unattended-Upgrade "1";' });
   assert.deepEqual(
     findings.filter((f) => !f.ok).map((f) => f.what),
     process.getuid?.() === 0 ? [] : ["running as root"],
@@ -58,7 +58,7 @@ test("password sign-in, root sign-in, no automatic updates, and an open port are
     "ss -Hltn": ok("LISTEN 0 4096 0.0.0.0:3000 0.0.0.0:*"),
     caddy: { code: 1, stdout: "", stderr: "not found" },
   });
-  const failed = (await checkServer(run, async () => "")).filter((f) => !f.ok);
+  const failed = (await checkServer(run, { read: async () => "" })).filter((f) => !f.ok);
   for (const what of ["SSH: no sign-in by password", "SSH: no sign-in as root", "automatic security updates", "Caddy installed"]) {
     assert.ok(
       failed.some((f) => f.what === what && f.fix.length > 10),
@@ -360,7 +360,7 @@ test("SSH on its own port isn't counted as open, but anything else listening ove
     "ss -Hltn": ok("LISTEN 0 4096 0.0.0.0:2222 0.0.0.0:*"),
     "ss -Hlun": ok("UNCONN 0 0 0.0.0.0:68 0.0.0.0:*\nUNCONN 0 0 [::]:443 [::]:*\nUNCONN 0 0 0.0.0.0:5353 0.0.0.0:*\nUNCONN 0 0 127.0.0.53%lo:53 0.0.0.0:*"),
   });
-  const listening = (await checkServer(run, async () => "")).find((f) => f.what.startsWith("nothing listening"));
+  const listening = (await checkServer(run, { read: async () => "" })).find((f) => f.what.startsWith("nothing listening"));
   assert.equal(listening?.ok, false);
   assert.equal(listening?.fix, "stop, or listen only on 127.0.0.1: 0.0.0.0:5353 (UDP)");
 });
@@ -375,7 +375,7 @@ test("a Match block that allows passwords for one user, or from a private addres
       );
     return ok();
   };
-  const finding = (await checkServer(run, async () => "")).find((f) => f.what === "SSH: no sign-in by password");
+  const finding = (await checkServer(run, { read: async () => "" })).find((f) => f.what === "SSH: no sign-in by password");
   assert.equal(finding?.ok, false);
   assert.match(finding?.fix ?? "", /allowed for ann/);
 });
@@ -387,13 +387,13 @@ test("a Match block that allows root for one outside address is found, in a file
   };
   const run = server({ sshd: ok("passwordauthentication no\nkbdinteractiveauthentication no\npermitrootlogin no\n") });
   const read = async (path: string) => files[path] ?? Promise.reject(new Error("ENOENT"));
-  const finding = (await checkServer(run, read)).find((f) => f.what.startsWith("SSH: no Match block"));
+  const finding = (await checkServer(run, { read })).find((f) => f.what.startsWith("SSH: no Match block"));
   assert.equal(finding?.ok, false);
   assert.match(finding?.fix ?? "", /PermitRootLogin=prohibit-password \(\/etc\/ssh\/sshd_config\.d\/99-site\.conf\)/);
   assert.doesNotMatch(finding?.fix ?? "", /PasswordAuthentication/);
 
   files["/etc/ssh/sshd_config.d/99-site.conf"] = "Match Address 203.0.113.0/24\n  PermitRootLogin no\n";
-  assert.equal((await checkServer(run, read)).find((f) => f.what.startsWith("SSH: no Match block"))?.ok, true);
+  assert.equal((await checkServer(run, { read })).find((f) => f.what.startsWith("SSH: no Match block"))?.ok, true);
 });
 
 test("an app's memory is set aside for it and is its ceiling, and its thread pool fits the cores", () => {
@@ -416,8 +416,8 @@ test("the deploy service builds within the server's own share of memory", () => 
 test("apps given more memory than the server has for them are found, with what to do", async () => {
   const run = server({});
   const finding = async (memories: number[]) =>
-    (await checkServer(run, async () => "", undefined, { apps: memories.map((memory, i) => ({ ...APP, name: `p${i}`, memory })), machine: SMALL })).find((f) =>
-      f.what.startsWith("apps' memory"),
+    (await checkServer(run, { read: async () => "", fleet: { apps: memories.map((memory, i) => ({ ...APP, name: `p${i}`, memory })), machine: SMALL } })).find(
+      (f) => f.what.startsWith("apps' memory"),
     );
   assert.equal((await finding([512]))?.ok, true);
   assert.equal((await finding([256, 256]))?.ok, true);
@@ -430,7 +430,9 @@ test("apps given more memory than the server has for them are found, with what t
 test("a server too small to run an app is found, with what to do", async () => {
   const run = server({});
   const finding = async (total: number) =>
-    (await checkServer(run, async () => "", undefined, { apps: [], machine: { total: total * MB, cores: 1 } })).find((f) => f.what.startsWith("memory enough"));
+    (await checkServer(run, { read: async () => "", fleet: { apps: [], machine: { total: total * MB, cores: 1 } } })).find((f) =>
+      f.what.startsWith("memory enough"),
+    );
   assert.equal((await finding(960))?.ok, true, "1GB");
   assert.equal((await finding(740))?.ok, true, "768MB: one small app");
   const tiny = await finding(480);

@@ -9,7 +9,7 @@ import { listApps, readApp } from "./apps.ts";
 import { checkServer, outsidePorts, report } from "./check.ts";
 import { answersWithin, deploy } from "./deploy.ts";
 import { helpFor, OVERVIEW, wantsHelp } from "./help.ts";
-import { launch, listServers } from "./launch.ts";
+import { dnsFor, launch, listServers } from "./launch.ts";
 import { createListener } from "./listener.ts";
 import { sizeText, thisMachine } from "./memory.ts";
 import { isName } from "./names.ts";
@@ -32,9 +32,9 @@ function parse(args: string[]) {
     const value = options.get(key);
     return typeof value === "string" ? value : undefined;
   };
-  /** A comma-separated list, such as --redirect's. */
-  const domains = (key: string) => (text(key) ?? "").split(",").filter(Boolean);
-  return { words, flag: (key: string) => options.get(key) === true, text, domains };
+  /** A comma-separated list, such as --redirect's or --server's. */
+  const several = (key: string) => (text(key) ?? "").split(",").filter(Boolean);
+  return { words, flag: (key: string) => options.get(key) === true, text, several };
 }
 
 const log = (line: string) => console.log(line);
@@ -63,11 +63,11 @@ async function main(argv: string[]): Promise<void> {
     process.exitCode = 1;
     return log(`There's no command called ${about}.\n\n${OVERVIEW}`);
   }
-  const { words, flag, text, domains } = parse(rest);
+  const { words, flag, text, several } = parse(rest);
   switch (command) {
     case "check": {
-      const fleet = { apps: await listApps(layout()), machine: thisMachine() };
-      if (!report(await checkServer(run, undefined, realpathSync(process.argv[1] ?? ""), fleet))) process.exitCode = 1;
+      const { paths, cli, machine } = server();
+      if (!report(await checkServer(run, { cli, fleet: { apps: await listApps(paths), machine } }))) process.exitCode = 1;
       return;
     }
     case "install":
@@ -75,21 +75,26 @@ async function main(argv: string[]): Promise<void> {
       return install(server(), text("domain"), flag("anyway"));
     case "add": {
       asRoot();
-      const added = await add(server(), app(words[0]), text("domain") ?? "", text("repo") ?? "", flag("anyway"), domains("redirect"), text("memory"));
+      const added = await add(server(), {
+        name: app(words[0]),
+        domain: text("domain") ?? "",
+        repo: text("repo") ?? "",
+        redirects: several("redirect"),
+        memory: text("memory"),
+        anyway: flag("anyway"),
+      });
       if (flag("json")) return log(JSON.stringify(added));
       log(`Added ${added.name}, with ${sizeText(added.memory)} of memory. In ${added.repo}'s settings on GitHub, add:`);
       log(`  a deploy key (read-only): ${added.deployKey}`);
       log(`  a webhook: ${added.webhook}, content type application/json, the "Workflow runs" event, with this secret:`);
       log(`  ${added.secret}`);
-      log(
-        `Then point the DNS of ${[added.domain, ...added.redirects].join(", ")} at this server (an A record each, and AAAA if it has IPv6). (modest-deploy launch does all of this from your computer.)`,
-      );
+      log(`Then point ${dnsFor([added.domain, ...added.redirects])}. (modest-deploy launch does all of this from your computer.)`);
       return;
     }
     case "list": {
       // From your computer, each server's in turn; on a server, its own (nothing in it is secret).
       if (text("server") !== undefined) {
-        if (await listServers(run, domains("server"), log)) process.exitCode = 1;
+        if (await listServers(run, several("server"), log)) process.exitCode = 1;
         return;
       }
       for (const row of await list(server())) log(row);
@@ -137,7 +142,7 @@ async function main(argv: string[]): Promise<void> {
         {
           name: words[0] ?? "",
           domain: words[1] ?? "",
-          redirects: domains("redirect"),
+          redirects: several("redirect"),
           server: text("server") ?? "",
           repo: text("repo"),
           template: text("template"),

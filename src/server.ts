@@ -6,12 +6,12 @@ import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { chmod, chown, mkdir, open, readdir, readFile, rename, rm, stat } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import { type App, areRedirects, freePort, listApps, MOST_REDIRECTS, otherApps, readApp, readHost, saveApp, takenDomain } from "./apps.ts";
+import { type App, BRANCH, checkAppInput, freePort, listApps, otherApps, readApp, readHost, saveApp, takenDomain, WORKFLOW, WRONG } from "./apps.ts";
 import { checkServer, report } from "./check.ts";
 import { answersWithin, freeBytes, KEEP_FREE, running } from "./deploy.ts";
 import { exists, writeWhole } from "./files.ts";
 import { allot, type Machine, memoryGiven, parseMemory, shares, sizeText } from "./memory.ts";
-import { isDomain, isName, isRepo } from "./names.ts";
+import { isDomain, isName, sameRepo } from "./names.ts";
 import {
   appUnit,
   appUser,
@@ -31,7 +31,7 @@ export type Server = { run: Run; paths: Layout; node: string; cli: string; log: 
 
 /** Checks the server, and refuses to go on if anything needs fixing (unless told to go on anyway). */
 async function checked(server: Server, anyway: boolean): Promise<void> {
-  const ok = report(await checkServer(server.run, undefined, server.cli, { apps: await listApps(server.paths), machine: server.machine }));
+  const ok = report(await checkServer(server.run, { cli: server.cli, fleet: { apps: await listApps(server.paths), machine: server.machine } }));
   if (!ok && !anyway) throw new Error("fix what's above first (or add --anyway, if you're sure)");
 }
 
@@ -220,25 +220,15 @@ export type Added = { name: string; domain: string; redirects: string[]; repo: s
  */
 export async function add(
   server: Server,
-  name: string,
-  domain: string,
-  repo: string,
-  anyway = false,
-  redirects: string[] = [],
-  memory?: string,
+  options: { name: string; domain: string; repo: string; redirects?: string[]; memory?: string | undefined; anyway?: boolean },
 ): Promise<Added> {
-  if (!isName(name)) throw new Error("the name must be 2 to 29 lowercase letters, digits, and single hyphens, starting with a letter");
-  if (!isDomain(domain)) throw new Error("the domain must be a domain, such as blog.example.org");
-  if (!areRedirects(redirects, domain))
-    throw new Error(`the redirects must be up to ${MOST_REDIRECTS} domains, each once, other than the app's own, such as www.blog.example.org`);
-  if (!isRepo(repo)) throw new Error("the repository must be owner/name, as on GitHub");
-  const asked = memory === undefined ? undefined : parseMemory(memory);
-  if (asked === null) throw new Error("the memory must be a size, such as 512M or 1G (at least 128M), or max");
+  const { name, domain, repo, redirects = [], anyway = false } = options;
+  const asked = checkAppInput({ name, domain, redirects, repo, memory: options.memory });
   await checked(server, anyway);
   const { paths, run, node } = server;
   const host = await readHost(paths);
   const existing = await readApp(paths, name);
-  if (existing && (existing.domain !== domain || existing.repo.toLowerCase() !== repo.toLowerCase())) {
+  if (existing && (existing.domain !== domain || !sameRepo(existing.repo, repo))) {
     throw new Error(`there's already an app called ${name}, for ${existing.domain} and ${existing.repo}`);
   }
   const others = await otherApps(paths, name);
@@ -255,8 +245,8 @@ export async function add(
         repo,
         port: freePort(others, await listening(server)),
         memory: given,
-        branch: "main",
-        workflow: ".github/workflows/ci.yml",
+        branch: BRANCH,
+        workflow: WORKFLOW,
       };
 
   await caddyWith(server, paths.caddySite(name), appSite(app));
@@ -339,7 +329,7 @@ export async function resize(server: Server, name: string, memory: string | unde
   const app = await readApp(paths, name);
   if (!app) throw new Error(`there's no app called ${name}`);
   const asked = parseMemory(memory);
-  if (asked === null) throw new Error("say how much: --memory 512M, --memory 1G (at least 128M), or --memory max");
+  if (asked === null) throw new Error(`say how much: ${WRONG.memory}`);
   const others = await otherApps(paths, name);
   const given = allot(asked, others, server.machine);
   const resized = { ...app, memory: given };

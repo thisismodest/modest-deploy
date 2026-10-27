@@ -4,7 +4,7 @@
 
 import { readdir, readFile } from "node:fs/promises";
 import { writeWhole } from "./files.ts";
-import { DEFAULT_MEMORY, isMemory } from "./memory.ts";
+import { DEFAULT_MEMORY, isMemory, parseMemory } from "./memory.ts";
 import { isDomain, isName, isPort, isRepo } from "./names.ts";
 import type { Layout } from "./paths.ts";
 
@@ -25,6 +25,36 @@ export const MOST_REDIRECTS = 10;
 /** Redirects are domains, each once, none the app's own, and only a few. */
 export const areRedirects = (value: unknown, domain: string): value is string[] =>
   Array.isArray(value) && value.length <= MOST_REDIRECTS && value.every((r) => isDomain(r) && r !== domain) && new Set(value).size === value.length;
+
+/** What's said when an app's details aren't right: the same from add, on the server, and launch, on your computer. */
+export const WRONG = {
+  name: "the name must be 2 to 29 lowercase letters, digits, and single hyphens, starting with a letter (and not listener, deploy, or backup)",
+  domain: "the domain must be a domain, such as blog.example.org",
+  redirects: `the redirects must be up to ${MOST_REDIRECTS} domains, each once, other than the app's own, such as www.blog.example.org`,
+  repo: "the repository must be owner/name, as on GitHub",
+  memory: "the memory must be a size, such as 512M or 1G (at least 128M), or max",
+};
+
+/**
+ * Checks what an app is added with, before anything is done: its name, domain, redirects,
+ * repository (if known yet), and memory. Gives the memory asked for, or undefined if none.
+ */
+export function checkAppInput(input: {
+  name: unknown;
+  domain: unknown;
+  redirects: unknown;
+  repo?: unknown;
+  memory?: string | undefined;
+}): number | "max" | undefined {
+  if (!isName(input.name)) throw new Error(WRONG.name);
+  if (!isDomain(input.domain)) throw new Error(WRONG.domain);
+  if (!areRedirects(input.redirects, input.domain)) throw new Error(WRONG.redirects);
+  if (input.repo !== undefined && !isRepo(input.repo)) throw new Error(WRONG.repo);
+  if (input.memory === undefined) return undefined;
+  const memory = parseMemory(input.memory);
+  if (memory === null) throw new Error(WRONG.memory);
+  return memory;
+}
 
 /** A domain of this app's already used here (another app's, or the deploy domain), or null. */
 export function takenDomain(app: Pick<App, "name" | "domain" | "redirects">, others: App[], host: Host): string | null {
