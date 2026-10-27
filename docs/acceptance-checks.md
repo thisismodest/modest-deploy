@@ -75,7 +75,7 @@ installed, with product "alpha" (and "beta" where needed) added, from a local re
 
 **A pushed commit filling the shared disk**
 36. **[PRIORITY]** A release installing to over 1GB, and one with 200,001 files: both refused, with no partial copy left.
-37. On a small filesystem (a loop mount), a release that would leave under 1GB free: refused.
+37. On a small filesystem (a tmpfs), a release that would leave under 1GB free: refused.
 
 **A release tricking root into reading something else**
 38. `package.json` as a link to `/etc/shadow`, as a FIFO, or as a 50MB file: each refused; root's output never holds the target.
@@ -124,8 +124,7 @@ installed, with product "alpha" (and "beta" where needed) added, from a local re
 Left out, as not needed: the listener's unit settings, read back from a running server
 (`src/commands.test.ts` checks the unit it writes), a disk filling just after a switch
 (#26's rollbacks cover a bad version), a hard link in a release (git can't commit one), and `launch` refusing a bad
-answer from the server (covered by `src/commands.test.ts`, as it needs GitHub). Check 37
-is still to be added: it needs a small filesystem of its own in the test container.
+answer from the server (covered by `src/commands.test.ts`, as it needs GitHub).
 
 ## Promises the reviewer found ambiguous
 

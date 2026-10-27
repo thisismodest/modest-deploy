@@ -771,6 +771,32 @@ await check(36, "a release over 1GB, and one with 200,001 files: both refused, w
   await refresh();
 });
 
+await check(37, "on a small filesystem, a release that would leave under 1GB free: refused", async () => {
+  // Alpha's releases, as they are, moved onto a filesystem of their own with under 1GB to spare.
+  const releases = "/srv/modest-deploy/alpha/releases";
+  const small = "/mnt/e2e-small";
+  const before = live.alpha?.label ?? "";
+  const used = Number(run("du", ["-sxm", releases]).out.split(/\s/)[0]);
+  const [mode, uid, gid] = run("stat", ["-c", "%a %u %g", releases]).out.trim().split(" ");
+  mkdirSync(small, { recursive: true });
+  sh("mount", ["-t", "tmpfs", "-o", `size=${used + 900}m,mode=${mode},uid=${uid},gid=${gid}`, "tmpfs", small]);
+  const since = now();
+  try {
+    sh("cp", ["-a", `${releases}/.`, `${small}/`]);
+    sh("mount", ["--bind", small, releases]);
+    note(`free for alpha's releases: ${run("df", ["-m", "--output=avail", releases]).out.trim().split("\n").at(-1)?.trim()}MB`);
+    const tried = await attempt("alpha", "normal", before);
+    note(`live is ${tried.live}`);
+    assert.ok(tried.stayed, "a release went live leaving under 1GB free");
+    assert.match(await journal(DEPLOY, since), /keep 1GB free|less than 1GB free/, "refused, but not for the room it needed");
+  } finally {
+    run("umount", [releases]);
+    run("umount", [small]);
+  }
+  // The same version, with room to spare, goes live: it was the room that stopped it.
+  await refresh();
+});
+
 await check(38, "package.json as a link to /etc/shadow, or 50MB: refused, and root's output never holds the target", async () => {
   const before = live.alpha?.label ?? "";
   const shadow = readFileSync("/etc/shadow", "utf8").split("\n")[0] ?? "";
@@ -1505,9 +1531,6 @@ await check(11, "headers sent, then the body a byte at a time: closed within a b
   assert.ok(meanwhile > 0, "another request wasn't answered");
   assert.ok(took > 0 && took < 120000, "not closed within two minutes");
 });
-
-// Still to do: it needs a small filesystem of its own (a loop mount) under /srv in this container.
-outcomes.push({ n: 37, what: "a release that would leave under 1GB free: refused", outcome: "skipped", note: "needs a small filesystem of its own" });
 
 markServer.close();
 console.log("\n== Acceptance checks");
