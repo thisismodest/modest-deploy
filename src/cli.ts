@@ -81,7 +81,9 @@ async function main(argv: string[]): Promise<void> {
       log(`  a deploy key (read-only): ${added.deployKey}`);
       log(`  a webhook: ${added.webhook}, content type application/json, the "Workflow runs" event, with this secret:`);
       log(`  ${added.secret}`);
-      log(`Then point the DNS of ${[added.domain, ...added.redirects].join(", ")} at this server. (modest-deploy launch does all of this from your computer.)`);
+      log(
+        `Then point the DNS of ${[added.domain, ...added.redirects].join(", ")} at this server (an A record each, and AAAA if it has IPv6). (modest-deploy launch does all of this from your computer.)`,
+      );
       return;
     }
     case "list": {

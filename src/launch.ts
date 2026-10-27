@@ -165,6 +165,6 @@ function byHand({ name, domain, server, redirects = [], repo, memory }: Launch):
     `       ${add}`,
     `  3. In ${where}'s settings on GitHub: add the deploy key (Deploy keys, read-only), and the webhook`,
     `     (Webhooks: its address, content type application/json, the secret, and only the "Workflow runs" event).`,
-    `  4. Point the DNS of ${[domain, ...redirects].join(", ")} at the server, and push to main.`,
+    `  4. Point the DNS of ${[domain, ...redirects].join(", ")} at the server (an A record each, and AAAA if it has IPv6), and push to main.`,
   ];
 }

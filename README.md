@@ -46,7 +46,8 @@ unless you add `--anyway`.
   certificate);
 - adds a signed webhook to the repository, so a push to `main` that passes CI
   deploys it;
-- tells you what's left: pointing the domain's DNS at the server.
+- tells you what's left: pointing the domain's DNS at the server (an `A` record, and
+  `AAAA` if it has IPv6).
 
 Add `--redirect www.example.org` (or several, separated by commas) for domains that
 should send visitors to the app's own, at the same path: such as `www.`, or an
@@ -134,7 +135,8 @@ sudo git clone https://github.com/thisismodest/modest-deploy.git /opt/modest-dep
 sudo ln -s /opt/modest-deploy/src/cli.ts /usr/local/bin/modest-deploy
 ```
 
-Then point the deploy domain's DNS at the server: GitHub's messages arrive there. `modest-deploy --help`
+Then point the deploy domain's DNS at the server (an `A` record, and `AAAA` if it has
+IPv6): GitHub's messages arrive there. `modest-deploy --help`
 says how to get started, and `modest-deploy help <command>` gives each command's page. For
 `launch`, install it on your computer too, the same way.
 

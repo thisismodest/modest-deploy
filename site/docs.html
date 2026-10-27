@@ -100,7 +100,7 @@
             <code>check</code> lists what it relies on, each marked <code>ok</code> or with what to fix.
             <code>install</code> runs it first, and won't go on until everything passes (add <code>--anyway</code> if
             you're sure). Then it installs the deploy listener, the deploy service, and the nightly backup.
-            Point the deploy domain's DNS at the server. That's where GitHub sends its messages.
+            Point the deploy domain's DNS at the server (an <code>A</code> record, and <code>AAAA</code> if it has IPv6). That's where GitHub sends its messages.
           </p>
         </section>
 
@@ -113,9 +113,9 @@
           </div>
           <ol>
             <li><strong>Makes the repository</strong> on GitHub (private, unless you add <code>--public</code>), from your template if you name one. If it's there already, it's used as it is: only the key and webhook below are added.</li>
-            <li><strong>Adds the product on the server:</strong> its own user, folder, keys file, service, and its domain in Caddy, which gets and renews its HTTPS certificate.</li>
-            <li><strong>Connects them:</strong> gives GitHub the server's read-only deploy key, and a webhook for the "Workflow runs" event, signed with a secret made for this product.</li>
-            <li><strong>Tells you what's left:</strong> point the domain's DNS at the server, and push.</li>
+            <li><strong>Adds the app on the server:</strong> its own user, folder, keys file, service, and its domain in Caddy, which gets and renews its HTTPS certificate.</li>
+            <li><strong>Connects them:</strong> gives GitHub the server's read-only deploy key, and a webhook for the "Workflow runs" event, signed with a secret made for this app.</li>
+            <li><strong>Tells you what's left:</strong> point the domain's DNS at the server (an <code>A</code> record, and <code>AAAA</code> if it has IPv6), and push.</li>
           </ol>
           <p>Without <code>gh</code>, or signed out of it, launch changes nothing: it says how to get it, and prints the same steps to do by hand, with your app's own <code>modest-deploy add</code> command for the server, which prints what to add on GitHub.</p>
           <p>

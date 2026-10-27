@@ -123,7 +123,22 @@ PermitRootLogin no</code></pre>
             <div class="window-bar" aria-hidden="true"><i></i><i></i><i></i><span>terminal</span></div>
             <pre><code><span class="c">$</span> sudo modest-deploy install --domain deploy.example.org</code></pre>
           </div>
-          <p>Then add a DNS record pointing <code>deploy.example.org</code> at the server's address. Caddy gets its HTTPS certificate once the record works.</p>
+          <p>Then, where your domain's DNS is managed, point <code>deploy.example.org</code> at the server:</p>
+          <div class="table-card">
+            <table>
+              <thead><tr><th scope="col">Type</th><th scope="col">Name</th><th scope="col">Value</th></tr></thead>
+              <tbody>
+                <tr><td><code>A</code></td><td><code>deploy</code></td><td>The server's IPv4 address, such as <code>203.0.113.7</code></td></tr>
+                <tr><td><code>AAAA</code></td><td><code>deploy</code></td><td>Its IPv6 address, if it has one</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            The name is the part before your domain (some providers want it whole: <code>deploy.example.org</code>). Use an
+            <code>A</code> record, not a <code>CNAME</code>: it points straight at the server, and works for a bare domain such as
+            <code>example.org</code> too (name <code>@</code>), where a <code>CNAME</code> isn't allowed. Caddy gets the HTTPS
+            certificate once the record works, usually within minutes.
+          </p>
         </section>
 
         <section aria-labelledby="computer">
@@ -221,7 +236,7 @@ jobs:
           </ul>
           <p>Then:</p>
           <ol>
-            <li>Add a DNS record pointing <code>shop.example.org</code> at the server.</li>
+            <li>Point <code>blog.example.org</code> at the server, as you did for <code>deploy</code> in <a href="#install">step 2</a>: an <code>A</code> record named <code>blog</code>, and <code>AAAA</code> if the server has IPv6. Each <code>--redirect</code> domain (such as <code>www.blog</code>) needs its own.</li>
             <li>For a new repository, push the folder to it:</li>
           </ol>
           <div class="window terminal">
